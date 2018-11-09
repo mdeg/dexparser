@@ -1,0 +1,8 @@
+[package]
+name = "dexparser"
+version = "0.1.0"
+authors = ["Michael Degano <michael@dega.no>"]
+edition = "2018"
+
+[dependencies]
+nom = "*"
