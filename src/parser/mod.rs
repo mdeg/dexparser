@@ -91,6 +91,84 @@ named_args!(parse_dex_file ( e: nom::Endianness ) <&[u8], DexFile>,
         (DexFile { header })
 ));
 
+struct MapList {
+    size: u32,
+    list: Vec<MapListItem>
+}
+
+struct MapListItem {
+    type_: MapListItemType,
+    unused: u16,
+    size: u32,
+    offset: u32
+}
+
+enum MapListItemType {
+    HeaderItem,
+    StringIdItem,
+    TypeIdItem,
+    ProtoIdItem,
+    FieldIdItem,
+    MethodIdItem,
+    ClassDefItem,
+    CallSiteIdItem,
+    MethodHandleItem,
+    MapList,
+    TypeList,
+    AnnotationSetRefList,
+    AnnotationSetItem,
+    ClassDataItem,
+    CodeItem,
+    StringDataItem,
+    DebugInfoItem,
+    AnnotationItem,
+    EncodedArrayItem,
+    AnnotationsDirectoryItem
+}
+
+impl MapListItemType {
+    fn parse(value: u16) -> Self {
+        match value {
+            0x0000 => MapListItemType::HeaderItem,
+            0x0001 => MapListItemType::StringIdItem,
+            0x0002 => MapListItemType::TypeIdItem,
+            0x0003 => MapListItemType::ProtoIdItem,
+            0x0004 => MapListItemType::FieldIdItem,
+            0x0005 => MapListItemType::MethodIdItem,
+            0x0006 => MapListItemType::ClassDefItem,
+            0x0007 => MapListItemType::CallSiteIdItem,
+            0x0008 => MapListItemType::MethodHandleItem,
+            0x1000 => MapListItemType::MapList,
+            0x1001 => MapListItemType::TypeList,
+            0x1002 => MapListItemType::AnnotationSetRefList,
+            0x1003 => MapListItemType::AnnotationSetItem,
+            0x2000 => MapListItemType::ClassDataItem,
+            0x2001 => MapListItemType::CodeItem,
+            0x2002 => MapListItemType::StringDataItem,
+            0x2003 => MapListItemType::DebugInfoItem,
+            0x2004 => MapListItemType::AnnotationItem,
+            0x2005 => MapListItemType::EncodedArrayItem,
+            0x2006 => MapListItemType::AnnotationsDirectoryItem,
+            _ => panic!("No type code found for map list item {}", value)
+        }
+    }
+}
+
+named_args!(parse_map_list ( e: nom::Endianness) <&[u8], MapList>,
+    do_parse!(
+        size: u32!(e)                                           >>
+        list: count!(do_parse!(
+                type_: map!(u16!(e), MapListItemType::parse)    >>
+                unused: u16!(e)                                 >>
+                size: u32!(e)                                   >>
+                offset: u32!(e)                                 >>
+                (MapListItem { type_, unused, size, offset })
+            ), size as usize)                                   >>
+
+        (MapList { size, list })
+    )
+);
+
 named_args!(proto_id_items ( e: nom::Endianness, s: usize ) <&[u8], Vec<ProtoIdItem> >,
     count!(
         do_parse!(
