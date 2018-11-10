@@ -50,9 +50,9 @@ pub fn parse(buffer: &[u8]) -> Result<DexFile, ParserErr> {
         println!("{:X?}", &buffer[40 .. 44]);
 
         if buffer[40 .. 44] == ENDIAN_CONSTANT {
-            nom::Endianness::Little
-        } else if buffer[40 .. 44] == REVERSE_ENDIAN_CONSTANT {
             nom::Endianness::Big
+        } else if buffer[40 .. 44] == REVERSE_ENDIAN_CONSTANT {
+            nom::Endianness::Little
         } else {
             return Err(ParserErr);
         }
@@ -79,9 +79,21 @@ pub fn parse(buffer: &[u8]) -> Result<DexFile, ParserErr> {
 
 named_args!(parse_dex_file ( e: nom::Endianness ) <&[u8], DexFile>,
     do_parse!(
-        header: apply!(parse_header, e)             >>
+        header: apply!(parse_header, e)                     >>
+        string_ids: apply!(string_identifier_list, e, header.string_ids_size)       >>
 
         (DexFile { header })
+));
+
+struct StringIdentifierOffsetList {
+    // String data offsets
+    string_data_offsets: Vec<u32>
+}
+
+named_args!(string_identifier_list ( e: nom::Endianness, num: u32 ) <&[u8], StringIdentifierOffsetList>,
+    do_parse!(
+        string_data_offsets: count!(u32!(e), num as usize) >>
+    (StringIdentifierOffsetList { string_data_offsets })
 ));
 
 named_args!(parse_header ( e: nom::Endianness ) <&[u8], Header>,
@@ -89,7 +101,8 @@ named_args!(parse_header ( e: nom::Endianness ) <&[u8], Header>,
         // Little bit of magic at the start
         tag!(DEX_FILE_MAGIC)                >>
         // Followed by the version (0380 for example)
-        version: count_fixed!(u8, digit, 4)                   >>
+        // TODO: convert these to digits and stringify them
+        version: dbg!(count_fixed!(u8, map!(take!(1), |x| { x[0] } ), 4)) >>
         // adler32 checksum of the rest of this DEX file
         // TODO: validate this later
         checksum: u32!(e)                   >>
@@ -102,6 +115,7 @@ named_args!(parse_header ( e: nom::Endianness ) <&[u8], Header>,
         link_size: u32!(e)                  >>
         link_off: u32!(e)                   >>
         map_off: u32!(e)                    >>
+        // Count of strings in the string identifier list
         string_ids_size: u32!(e)            >>
         string_ids_off: u32!(e)             >>
         type_ids_size: u32!(e)              >>
