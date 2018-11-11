@@ -71,7 +71,7 @@ pub fn parse(buffer: &[u8]) -> Result<DexFile, ParserErr> {
     let res = parse_dex_file(buffer, endianness);
 
     match res {
-        Ok(dexf) => Ok(dexf.1),
+        Ok(dexf) => Ok(dexf),
         Err(e) => {
 //            println!("ERROR: {}", e);
             Err(ParserErr)
@@ -79,17 +79,48 @@ pub fn parse(buffer: &[u8]) -> Result<DexFile, ParserErr> {
     }
 }
 
-named_args!(parse_dex_file ( e: nom::Endianness ) <&[u8], DexFile>,
-    do_parse!(
-        header: apply!(parse_header, e)                                                         >>
-        string_id_idxs: count!(u32!(e), header.string_ids_size as usize)                     >>
-        type_id_idxs: count!(u32!(e), header.type_ids_size as usize)                    >>
-        proto_id_idxs: apply!(proto_id_items, e, header.proto_ids_size as usize)               >>
-        field_id_idxs: apply!(field_id_items, e, header.field_ids_size as usize)               >>
-        method_id_idxs: apply!(method_id_items, e, header.method_ids_size as usize)            >>
-        class_def_idxs: apply!(class_def_items, e, header.class_defs_size as usize)     >>
-        (DexFile { header })
-));
+fn parse_dex_file(buffer: &[u8], e: nom::Endianness) -> Result<DexFile, ParserErr> {
+    let (buffer, header) = parse_header(buffer, e).unwrap();
+
+    // Version 038 adds some new index pools with sizes not indicated in the header
+    // Need to peek at this a bit early so we know how big some of the index pools are
+    // Very inconvenient!
+//    let map_list = peek!(parse_map_list(&buffer[header.map_off - header.size ..], e));
+
+    let sub_buffer = &buffer[(header.map_off - header.header_size) as usize ..];
+    let (_, map_list) = parse_map_list(sub_buffer, e).unwrap();
+
+    let (buffer, (string_id_idxs, type_id_idxs, proto_id_idxs, field_id_idxs, method_id_idxs, class_def_idxs))
+    = parse_id_idxs(buffer, e, &header).unwrap();
+
+    let call_site_idxs = parse_u32_list(buffer, e,
+                                        map_list.list.iter().filter(|item| item.type_ == MapListItemType::CallSiteIdItem).count());
+
+    let method_handle_items_idxs = parse_u32_list(buffer, e,
+                                        map_list.list.iter().filter(|item| item.type_  == MapListItemType::MethodHandleItem).count());
+
+    let data = take!(buffer, header.data_size);
+
+    Ok(DexFile {
+        header
+    })
+}
+
+named_args!(parse_id_idxs <'a> ( e: nom::Endianness, header: &Header ) <&'a[u8], ( Vec<u32>, Vec<u32>,
+Vec<ProtoIdItem>, Vec<FieldIdItem>, Vec<MethodIdItem>, Vec<ClassDefItem> ) >,
+        do_parse!(
+            strg: apply!(parse_u32_list, e, header.string_ids_size as usize)        >>
+            typ: apply!(parse_u32_list, e, header.type_ids_size as usize)           >>
+            pro: apply!(proto_id_items, e, header.proto_ids_size as usize)          >>
+            fld: apply!(field_id_items, e, header.field_ids_size as usize)          >>
+            mtd: apply!(method_id_items, e, header.method_ids_size as usize)        >>
+            cls: apply!(class_def_items, e, header.class_defs_size as usize)        >>
+            (strg, typ, pro, fld, mtd, cls)
+        )
+);
+
+named_args!(parse_u32_list ( e: nom::Endianness, size: usize ) <&[u8], Vec<u32> >,
+    count!(u32!(e), size));
 
 struct MapList {
     size: u32,
@@ -103,6 +134,7 @@ struct MapListItem {
     offset: u32
 }
 
+#[derive(PartialEq)]
 enum MapListItemType {
     HeaderItem,
     StringIdItem,
