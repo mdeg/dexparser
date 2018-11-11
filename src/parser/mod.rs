@@ -15,7 +15,8 @@ const NO_INDEX: u32 = 0xffffffff;
 pub struct DexFile<'a> {
     header: Header<'a>,
     string_data_items: Vec<StringDataItem>,
-    type_id_data_items: Vec<TypeIdentifierDataItem>
+    type_id_data_items: Vec<TypeIdentifierDataItem>,
+    proto_id_data_items: Vec<PrototypeDataItem>
 }
 
 #[derive(Debug)]
@@ -115,16 +116,63 @@ fn parse_dex_file(buffer: &[u8], e: nom::Endianness) -> Result<DexFile, ParserEr
         }
     }).collect();
 
-    let type_id_data_items = type_id_idxs.into_iter().map(|idx| {
+    let type_id_data_items: Vec<TypeIdentifierDataItem> = type_id_idxs.into_iter().map(|idx| {
         // Type ID indexes are indexes into the string IDs list, which we have pulled out above
         TypeIdentifierDataItem { descriptor: string_data_items[idx as usize].data.clone() }
+    }).collect();
+
+    let proto_id_data_items = proto_id_idxs.into_iter().map(|item| {
+        let shorty = string_data_items[item.shorty_idx as usize].data.clone();
+        let return_type = type_id_data_items[item.return_type_idx as usize].descriptor.clone();
+
+        let parameters = if item.parameters_off == 0 {
+            None
+        } else {
+            match parse_type_list(&data[item.parameters_off as usize - header.data_off as usize..], e) {
+                Ok((_, res)) => {
+                    // We now have a list of indexes into the type IDs list
+                    Some(res.list.into_iter()
+                        .map(|idx| type_id_data_items[idx as usize].descriptor.clone())
+                        .collect())
+                },
+                Err(e) => panic!("TODO")
+            }
+        };
+
+        PrototypeDataItem {
+            shorty,
+            return_type,
+            parameters
+        }
     }).collect();
 
     Ok(DexFile {
         header,
         string_data_items,
-        type_id_data_items
+        type_id_data_items,
+        proto_id_data_items
     })
+}
+
+named_args!(parse_type_list (e: nom::Endianness) <&[u8], TypeListItem>,
+    peek!(do_parse!(
+            size: u32!(e) >>
+            list: count!(u16!(e), size as usize) >>
+            (TypeListItem { size, list })
+)));
+
+struct TypeListItem {
+    // Size of the following list
+    size: u32,
+
+    list: Vec<u16>
+}
+
+#[derive(Debug)]
+struct PrototypeDataItem {
+    shorty: Rc<String>,
+    return_type: Rc<String>,
+    parameters: Option<Vec<Rc<String>>>
 }
 
 #[derive(Debug)]
