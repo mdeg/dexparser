@@ -1,5 +1,6 @@
 use nom::*;
 use std::str;
+use std::rc::Rc;
 
 // The magic that starts a DEX file
 const DEX_FILE_MAGIC: [u8; 4] = [0x64, 0x65, 0x78, 0x0a];
@@ -13,7 +14,8 @@ const NO_INDEX: u32 = 0xffffffff;
 #[derive(Debug)]
 pub struct DexFile<'a> {
     header: Header<'a>,
-    string_data_items: Vec<StringDataItem>
+    string_data_items: Vec<StringDataItem>,
+    type_id_data_items: Vec<TypeIdentifierDataItem>
 }
 
 #[derive(Debug)]
@@ -106,17 +108,28 @@ fn parse_dex_file(buffer: &[u8], e: nom::Endianness) -> Result<DexFile, ParserEr
 
     let (buffer, data) = take!(buffer, header.data_size).unwrap();
 
-    let string_data_items = string_data_offsets.into_iter().map(|index_offset| {
+    let string_data_items: Vec<StringDataItem> = string_data_offsets.into_iter().map(|index_offset| {
         match parse_string_data_item(&data[index_offset as usize - header.data_off as usize..]) {
             Ok((_, item)) => item,
             Err(e) => panic!("Could not parse string data item")
         }
     }).collect();
 
+    let type_id_data_items = type_id_idxs.into_iter().map(|idx| {
+        // Type ID indexes are indexes into the string IDs list, which we have pulled out above
+        TypeIdentifierDataItem { descriptor: string_data_items[idx as usize].data.clone() }
+    }).collect();
+
     Ok(DexFile {
         header,
-        string_data_items
+        string_data_items,
+        type_id_data_items
     })
+}
+
+#[derive(Debug)]
+struct TypeIdentifierDataItem {
+    descriptor: Rc<String>
 }
 
 // Length of uleb128 value is determined by the
@@ -130,7 +143,7 @@ named!(parse_string_data_item <&[u8], StringDataItem> ,
             // uleb128 values are 1-5 bytes long - determine how long it is so we can parse the item
             uleb_len: peek!(map!(take!(5), determine_uleb128_length))           >>
             utf16_size: map_res!(take!(uleb_len), read_uleb128)                >>
-            data: map!(map_res!(take_until_and_consume!("\0"), str::from_utf8), str::to_string) >>
+            data: map!(map!(map_res!(take_until_and_consume!("\0"), str::from_utf8), str::to_string), Rc::new) >>
             (StringDataItem { utf16_size, data })
     ))
 );
@@ -145,7 +158,7 @@ fn read_uleb128(input: &[u8]) -> Result<u64, leb128::read::Error> {
 struct StringDataItem {
     // Need to convert this from a uleb128 value
     utf16_size: u64,
-    data: String
+    data: Rc<String>
 }
 
 named_args!(parse_id_idxs <'a> ( e: nom::Endianness, header: &Header ) <&'a[u8], ( Vec<u32>, Vec<u32>,
