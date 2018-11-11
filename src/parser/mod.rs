@@ -1,4 +1,5 @@
 use nom::*;
+use std::str;
 
 // The magic that starts a DEX file
 const DEX_FILE_MAGIC: [u8; 4] = [0x64, 0x65, 0x78, 0x0a];
@@ -11,7 +12,8 @@ const NO_INDEX: u32 = 0xffffffff;
 
 #[derive(Debug)]
 pub struct DexFile<'a> {
-    header: Header<'a>
+    header: Header<'a>,
+    string_data_items: Vec<StringDataItem>
 }
 
 #[derive(Debug)]
@@ -79,18 +81,21 @@ pub fn parse(buffer: &[u8]) -> Result<DexFile, ParserErr> {
     }
 }
 
+
+
 fn parse_dex_file(buffer: &[u8], e: nom::Endianness) -> Result<DexFile, ParserErr> {
     let (buffer, header) = parse_header(buffer, e).unwrap();
 
     // Version 038 adds some new index pools with sizes not indicated in the header
     // Need to peek at this a bit early so we know how big some of the index pools are
     // Very inconvenient!
-//    let map_list = peek!(parse_map_list(&buffer[header.map_off - header.size ..], e));
+    let map_list = match parse_map_list(&buffer[(header.map_off - header.header_size) as usize ..], e) {
+        Ok((_, map_list)) => map_list,
+        // TODO
+        Err(e) => return Err(ParserErr)
+    };
 
-    let sub_buffer = &buffer[(header.map_off - header.header_size) as usize ..];
-    let (_, map_list) = parse_map_list(sub_buffer, e).unwrap();
-
-    let (buffer, (string_id_idxs, type_id_idxs, proto_id_idxs, field_id_idxs, method_id_idxs, class_def_idxs))
+    let (buffer, (string_data_offsets, type_id_idxs, proto_id_idxs, field_id_idxs, method_id_idxs, class_def_idxs))
     = parse_id_idxs(buffer, e, &header).unwrap();
 
     let call_site_idxs = parse_u32_list(buffer, e,
@@ -99,11 +104,48 @@ fn parse_dex_file(buffer: &[u8], e: nom::Endianness) -> Result<DexFile, ParserEr
     let method_handle_items_idxs = parse_u32_list(buffer, e,
                                         map_list.list.iter().filter(|item| item.type_  == MapListItemType::MethodHandleItem).count());
 
-    let data = take!(buffer, header.data_size);
+    let (buffer, data) = take!(buffer, header.data_size).unwrap();
+
+    let string_data_items = string_data_offsets.into_iter().map(|index_offset| {
+        match parse_string_data_item(&data[index_offset as usize - header.data_off as usize..]) {
+            Ok((_, item)) => item,
+            Err(e) => panic!("Could not parse string data item")
+        }
+    }).collect();
 
     Ok(DexFile {
-        header
+        header,
+        string_data_items
     })
+}
+
+// Length of uleb128 value is determined by the
+fn determine_uleb128_length(input: &[u8]) -> usize {
+    input.iter().take_while(|byte| *byte & (0 << 0) != 0).count() + 1
+}
+
+named!(parse_string_data_item <&[u8], StringDataItem> ,
+    peek!(
+        do_parse!(
+            // uleb128 values are 1-5 bytes long - determine how long it is so we can parse the item
+            uleb_len: peek!(map!(take!(5), determine_uleb128_length))           >>
+            utf16_size: map_res!(take!(uleb_len), read_uleb128)                >>
+            data: map!(map_res!(take_until_and_consume!("\0"), str::from_utf8), str::to_string) >>
+            (StringDataItem { utf16_size, data })
+    ))
+);
+
+// nom gives us immutable byte slices, but the leb128 library requires mutable slices
+// No syntactically valid way to convert the two inside the macro so we'll make a wrapper function
+fn read_uleb128(input: &[u8]) -> Result<u64, leb128::read::Error> {
+    leb128::read::unsigned(&mut (input.clone()))
+}
+
+#[derive(Debug)]
+struct StringDataItem {
+    // Need to convert this from a uleb128 value
+    utf16_size: u64,
+    data: String
 }
 
 named_args!(parse_id_idxs <'a> ( e: nom::Endianness, header: &Header ) <&'a[u8], ( Vec<u32>, Vec<u32>,
