@@ -141,8 +141,8 @@ fn parse_prototype_data<'a>(input: &'a[u8], data: &'a[u8], sdi: &[Rc<StringDataI
     let mut v = Vec::with_capacity(size as usize);
     let (buffer, id_items) = parse_proto_id_items(&input, e, size)?;
     for id_item in id_items {
-        let shorty = sdi[id_item.shorty_idx as usize].data.clone();
-        let return_type = tidi[id_item.return_type_idx as usize].descriptor.clone();
+        let shorty = sdi[id_item.shorty_idx as usize].clone();
+        let return_type = tidi[id_item.return_type_idx as usize].clone();
 
         let parameters = if id_item.parameters_off == 0 {
             None
@@ -151,7 +151,7 @@ fn parse_prototype_data<'a>(input: &'a[u8], data: &'a[u8], sdi: &[Rc<StringDataI
                 .1
                 .list
                 .into_iter()
-                .map(|idx| tidi[idx as usize].descriptor.clone())
+                .map(|idx| tidi[idx as usize].clone())
                 .collect())
         };
 
@@ -208,7 +208,7 @@ struct FieldDataItem {
 fn parse_type_data<'a>(input: &'a[u8], e: nom::Endianness, size: usize, sdi: &[Rc<StringDataItem>]) -> Result<(&'a[u8], Vec<Rc<TypeIdentifierDataItem>>), nom::Err<&'a[u8]>> {
     let (buffer, idxs) = parse_u32_list(&input, e, size)?;
     Ok((buffer, idxs.into_iter()
-        .map(|idx| Rc::new(TypeIdentifierDataItem { descriptor: sdi[idx as usize].data.clone() }))
+        .map(|idx| Rc::new(TypeIdentifierDataItem { descriptor: sdi[idx as usize].clone() }))
         .collect()
     ))
 }
@@ -227,31 +227,16 @@ fn parse_string_data<'a>(input: &'a[u8], header: &Header, data: &'a[u8], e: nom:
     Ok((buffer, v))
 }
 
-named_args!(parse_type_list_item(e: nom::Endianness)<&[u8], TypeListItem>,
-    peek!(
-        do_parse!(
-            size: u32!(e)                                       >>
-            list: count!(u16!(e), size as usize)                >>
-            (TypeListItem { size, list })
-    )
-));
-
-struct TypeListItem {
-    // Size of the following list
-    size: u32,
-    list: Vec<u16>
-}
-
 #[derive(Debug)]
 struct PrototypeDataItem {
-    shorty: String,
-    return_type: String,
-    parameters: Option<Vec<String>>
+    shorty: Rc<StringDataItem>,
+    return_type: Rc<TypeIdentifierDataItem>,
+    parameters: Option<Vec<Rc<TypeIdentifierDataItem>>>
 }
 
 #[derive(Debug)]
 struct TypeIdentifierDataItem {
-    descriptor: String
+    descriptor: Rc<StringDataItem>
 }
 
 // Length of uleb128 value is determined by the
@@ -376,6 +361,21 @@ peek!(
     )
     )
 );
+
+named_args!(parse_type_list_item(e: nom::Endianness)<&[u8], TypeListItem>,
+    peek!(
+        do_parse!(
+            size: u32!(e)                                       >>
+            list: count!(u16!(e), size as usize)                >>
+            (TypeListItem { size, list })
+    )
+));
+
+struct TypeListItem {
+    // Size of the following list
+    size: u32,
+    list: Vec<u16>
+}
 
 named_args!(parse_proto_id_items(e: nom::Endianness, size: usize)<&[u8], Vec<ProtoIdItem>>,
     count!(
