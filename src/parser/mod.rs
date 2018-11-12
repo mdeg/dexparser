@@ -16,7 +16,8 @@ pub struct DexFile<'a> {
     header: Header<'a>,
     string_data_items: Vec<StringDataItem>,
     type_id_data_items: Vec<TypeIdentifierDataItem>,
-    proto_id_data_items: Vec<PrototypeDataItem>
+    proto_id_data_items: Vec<PrototypeDataItem>,
+    field_data_items: Vec<FieldDataItem>
 }
 
 #[derive(Debug)]
@@ -111,7 +112,9 @@ fn parse_dex_file(buffer: &[u8], e: nom::Endianness) -> Result<DexFile, ParserEr
     let (buffer, proto_id_data_items) = parse_prototype_data(&buffer, &data, &string_data_items, &type_id_data_items,
                                                              header.proto_ids_size as usize, header.data_off as usize, e)?;
 
-    let (buffer, (field_id_idxs, method_id_idxs, class_def_idxs)) = parse_id_idxs(&buffer, e, &header).unwrap();
+    let (buffer, field_data_items) = parse_field_data(&buffer, &string_data_items, &type_id_data_items, header.field_ids_size as usize, e)?;
+
+    let (buffer, (method_id_idxs, class_def_idxs)) = parse_id_idxs(&buffer, e, &header).unwrap();
 
     let call_site_idxs = parse_u32_list(buffer, e,
                                         map_list.list.iter().filter(|item| item.type_ == MapListItemType::CallSiteIdItem).count());
@@ -123,7 +126,8 @@ fn parse_dex_file(buffer: &[u8], e: nom::Endianness) -> Result<DexFile, ParserEr
         header,
         string_data_items,
         type_id_data_items,
-        proto_id_data_items
+        proto_id_data_items,
+        field_data_items
     })
 }
 
@@ -151,6 +155,28 @@ fn parse_prototype_data<'a>(input: &'a[u8], data: &'a[u8], sdi: &[StringDataItem
     }
 
     Ok((buffer, v))
+}
+
+fn parse_field_data<'a>(input: &'a[u8], sdi: &[StringDataItem], tidi: &[TypeIdentifierDataItem],
+                        size: usize, e: nom::Endianness) -> Result<(&'a[u8], Vec<FieldDataItem>), nom::Err<&'a[u8]>> {
+    let (input, items) = parse_field_id_items(&input, e, size)?;
+
+    Ok((input,
+        items.into_iter().map(|item| {
+            FieldDataItem {
+                definer: tidi[item.class_idx as usize].descriptor.clone(),
+                type_: tidi[item.type_idx as usize].descriptor.clone(),
+                name: sdi[item.name_idx as usize].data.clone()
+            }
+        }).collect())
+    )
+}
+
+#[derive(Debug)]
+struct FieldDataItem {
+    definer: Rc<String>,
+    type_: Rc<String>,
+    name: Rc<String>
 }
 
 fn parse_type_data<'a>(input: &'a[u8], e: nom::Endianness, size: usize, sdi: &[StringDataItem]) -> Result<(&'a[u8], Vec<TypeIdentifierDataItem>), nom::Err<&'a[u8]>> {
@@ -237,12 +263,11 @@ struct StringDataItem {
     data: Rc<String>
 }
 
-named_args!(parse_id_idxs<'a>(e: nom::Endianness, header: &Header ) <&'a[u8], ( Vec<FieldIdItem>, Vec<MethodIdItem>, Vec<ClassDefItem> ) >,
+named_args!(parse_id_idxs<'a>(e: nom::Endianness, header: &Header ) <&'a[u8], ( Vec<MethodIdItem>, Vec<ClassDefItem> ) >,
         do_parse!(
-            fld: apply!(field_id_items, e, header.field_ids_size as usize)          >>
             mtd: apply!(method_id_items, e, header.method_ids_size as usize)        >>
             cls: apply!(class_def_items, e, header.class_defs_size as usize)        >>
-            (fld, mtd, cls)
+            ( mtd, cls)
         )
 );
 
@@ -347,7 +372,7 @@ struct ProtoIdItem {
     parameters_off: u32
 }
 
-named_args!(field_id_items(e: nom::Endianness, size: usize)<&[u8], Vec<FieldIdItem>>,
+named_args!(parse_field_id_items(e: nom::Endianness, size: usize)<&[u8], Vec<FieldIdItem>>,
     count!(
         do_parse!(
             class_idx: u16!(e)                                  >>
