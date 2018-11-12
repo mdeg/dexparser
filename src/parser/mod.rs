@@ -14,10 +14,11 @@ const NO_INDEX: u32 = 0xffffffff;
 #[derive(Debug)]
 pub struct DexFile<'a> {
     header: Header<'a>,
-    string_data_items: Vec<StringDataItem>,
-    type_id_data_items: Vec<TypeIdentifierDataItem>,
-    proto_id_data_items: Vec<PrototypeDataItem>,
-    field_data_items: Vec<FieldDataItem>
+    string_data_items: Vec<Rc<StringDataItem>>,
+    type_id_data_items: Vec<Rc<TypeIdentifierDataItem>>,
+    proto_id_data_items: Vec<Rc<PrototypeDataItem>>,
+    field_data_items: Vec<FieldDataItem>,
+    method_data_items: Vec<MethodDataItem>
 }
 
 #[derive(Debug)]
@@ -114,7 +115,9 @@ fn parse_dex_file(buffer: &[u8], e: nom::Endianness) -> Result<DexFile, ParserEr
 
     let (buffer, field_data_items) = parse_field_data(&buffer, &string_data_items, &type_id_data_items, header.field_ids_size as usize, e)?;
 
-    let (buffer, (method_id_idxs, class_def_idxs)) = parse_id_idxs(&buffer, e, &header).unwrap();
+    let (buffer, method_data_items) = parse_method_data(&buffer, &string_data_items, &type_id_data_items, &proto_id_data_items, header.method_ids_size as usize, e)?;
+
+    let (buffer, class_def_idxs) = parse_id_idxs(&buffer, e, &header).unwrap();
 
     let call_site_idxs = parse_u32_list(buffer, e,
                                         map_list.list.iter().filter(|item| item.type_ == MapListItemType::CallSiteIdItem).count());
@@ -127,12 +130,13 @@ fn parse_dex_file(buffer: &[u8], e: nom::Endianness) -> Result<DexFile, ParserEr
         string_data_items,
         type_id_data_items,
         proto_id_data_items,
-        field_data_items
+        field_data_items,
+        method_data_items
     })
 }
 
-fn parse_prototype_data<'a>(input: &'a[u8], data: &'a[u8], sdi: &[StringDataItem], tidi: &[TypeIdentifierDataItem],
-                            size: usize, data_offset: usize, e: nom::Endianness) -> Result<(&'a[u8], Vec<PrototypeDataItem>), nom::Err<&'a[u8]>> {
+fn parse_prototype_data<'a>(input: &'a[u8], data: &'a[u8], sdi: &[Rc<StringDataItem>], tidi: &[Rc<TypeIdentifierDataItem>],
+                            size: usize, data_offset: usize, e: nom::Endianness) -> Result<(&'a[u8], Vec<Rc<PrototypeDataItem>>), nom::Err<&'a[u8]>> {
 
     let mut v = Vec::with_capacity(size as usize);
     let (buffer, id_items) = parse_proto_id_items(&input, e, size)?;
@@ -151,22 +155,44 @@ fn parse_prototype_data<'a>(input: &'a[u8], data: &'a[u8], sdi: &[StringDataItem
                 .collect())
         };
 
-        v.push(PrototypeDataItem {shorty, return_type, parameters});
+        v.push(Rc::new(PrototypeDataItem {shorty, return_type, parameters}));
     }
 
     Ok((buffer, v))
 }
 
-fn parse_field_data<'a>(input: &'a[u8], sdi: &[StringDataItem], tidi: &[TypeIdentifierDataItem],
+fn parse_method_data<'a>(input: &'a[u8], sdi: &[Rc<StringDataItem>], tidi: &[Rc<TypeIdentifierDataItem>],
+                        pdi: &[Rc<PrototypeDataItem>], size: usize, e: nom::Endianness) -> Result<(&'a[u8], Vec<MethodDataItem>), nom::Err<&'a[u8]>> {
+    let (input, items) = parse_method_id_items(&input, e, size)?;
+
+    Ok((input,
+        items.into_iter().map(|item| {
+            MethodDataItem {
+                definer: tidi[item.class_idx as usize].clone(),
+                prototype: pdi[item.proto_idx as usize].clone(),
+                name: sdi[item.name_idx as usize].clone()
+            }
+        }).collect())
+    )
+}
+
+#[derive(Debug)]
+struct MethodDataItem {
+    definer: Rc<TypeIdentifierDataItem>,
+    prototype: Rc<PrototypeDataItem>,
+    name: Rc<StringDataItem>
+}
+
+fn parse_field_data<'a>(input: &'a[u8], sdi: &[Rc<StringDataItem>], tidi: &[Rc<TypeIdentifierDataItem>],
                         size: usize, e: nom::Endianness) -> Result<(&'a[u8], Vec<FieldDataItem>), nom::Err<&'a[u8]>> {
     let (input, items) = parse_field_id_items(&input, e, size)?;
 
     Ok((input,
         items.into_iter().map(|item| {
             FieldDataItem {
-                definer: tidi[item.class_idx as usize].descriptor.clone(),
-                type_: tidi[item.type_idx as usize].descriptor.clone(),
-                name: sdi[item.name_idx as usize].data.clone()
+                definer: tidi[item.class_idx as usize].clone(),
+                type_: tidi[item.type_idx as usize].clone(),
+                name: sdi[item.name_idx as usize].clone()
             }
         }).collect())
     )
@@ -174,21 +200,21 @@ fn parse_field_data<'a>(input: &'a[u8], sdi: &[StringDataItem], tidi: &[TypeIden
 
 #[derive(Debug)]
 struct FieldDataItem {
-    definer: Rc<String>,
-    type_: Rc<String>,
-    name: Rc<String>
+    definer: Rc<TypeIdentifierDataItem>,
+    type_: Rc<TypeIdentifierDataItem>,
+    name: Rc<StringDataItem>
 }
 
-fn parse_type_data<'a>(input: &'a[u8], e: nom::Endianness, size: usize, sdi: &[StringDataItem]) -> Result<(&'a[u8], Vec<TypeIdentifierDataItem>), nom::Err<&'a[u8]>> {
+fn parse_type_data<'a>(input: &'a[u8], e: nom::Endianness, size: usize, sdi: &[Rc<StringDataItem>]) -> Result<(&'a[u8], Vec<Rc<TypeIdentifierDataItem>>), nom::Err<&'a[u8]>> {
     let (buffer, idxs) = parse_u32_list(&input, e, size)?;
     Ok((buffer, idxs.into_iter()
-        .map(|idx| TypeIdentifierDataItem { descriptor: sdi[idx as usize].data.clone() })
+        .map(|idx| Rc::new(TypeIdentifierDataItem { descriptor: sdi[idx as usize].data.clone() }))
         .collect()
     ))
 }
 
 fn parse_string_data<'a>(input: &'a[u8], header: &Header, data: &'a[u8], e: nom::Endianness)
-    -> Result<(&'a[u8], Vec<StringDataItem>), nom::Err<&'a[u8]>> {
+    -> Result<(&'a[u8], Vec<Rc<StringDataItem>>), nom::Err<&'a[u8]>> {
     let mut v = Vec::with_capacity(header.string_ids_size as usize);
     // Pull out the list of offsets into data block
     let (buffer, offsets) = parse_u32_list(input, e, header.string_ids_size as usize)?;
@@ -196,7 +222,7 @@ fn parse_string_data<'a>(input: &'a[u8], header: &Header, data: &'a[u8], e: nom:
     for offset in offsets {
         // Offsets are given as offset from start of file, not start of data
         // This should not consume data - offsets must be preserved
-        v.push(parse_string_data_item(&data[offset as usize - header.data_off as usize..])?.1);
+        v.push(Rc::new(parse_string_data_item(&data[offset as usize - header.data_off as usize..])?.1));
     }
     Ok((buffer, v))
 }
@@ -218,14 +244,14 @@ struct TypeListItem {
 
 #[derive(Debug)]
 struct PrototypeDataItem {
-    shorty: Rc<String>,
-    return_type: Rc<String>,
-    parameters: Option<Vec<Rc<String>>>
+    shorty: String,
+    return_type: String,
+    parameters: Option<Vec<String>>
 }
 
 #[derive(Debug)]
 struct TypeIdentifierDataItem {
-    descriptor: Rc<String>
+    descriptor: String
 }
 
 // Length of uleb128 value is determined by the
@@ -241,11 +267,9 @@ named!(parse_string_data_item <&[u8], StringDataItem> ,
             uleb_len: peek!(map!(take!(5), determine_uleb128_length))               >>
             utf16_size: map_res!(take!(uleb_len), read_uleb128)                     >>
             data: map!(
-                    map!(
-                        map_res!(
-                            take_until_and_consume!("\0"), str::from_utf8),
-                        str::to_string),
-                    Rc::new)                                                        >>
+                    map_res!(
+                        take_until_and_consume!("\0"), str::from_utf8),
+                    str::to_string)                                                 >>
             (StringDataItem { utf16_size, data })
     ))
 );
@@ -260,14 +284,13 @@ fn read_uleb128(input: &[u8]) -> Result<u64, leb128::read::Error> {
 struct StringDataItem {
     // Need to convert this from a uleb128 value
     utf16_size: u64,
-    data: Rc<String>
+    data: String
 }
 
-named_args!(parse_id_idxs<'a>(e: nom::Endianness, header: &Header ) <&'a[u8], ( Vec<MethodIdItem>, Vec<ClassDefItem> ) >,
+named_args!(parse_id_idxs<'a>(e: nom::Endianness, header: &Header ) <&'a[u8], (Vec<ClassDefItem> ) >,
         do_parse!(
-            mtd: apply!(method_id_items, e, header.method_ids_size as usize)        >>
             cls: apply!(class_def_items, e, header.class_defs_size as usize)        >>
-            ( mtd, cls)
+            ( cls)
         )
 );
 
@@ -388,7 +411,7 @@ struct FieldIdItem {
     name_idx: u32
 }
 
-named_args!(method_id_items(e: nom::Endianness, size: usize)<&[u8], Vec<MethodIdItem>>,
+named_args!(parse_method_id_items(e: nom::Endianness, size: usize)<&[u8], Vec<MethodIdItem>>,
     count!(
         do_parse!(
             class_idx: u16!(e)                                  >>
