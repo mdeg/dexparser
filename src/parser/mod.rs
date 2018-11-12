@@ -189,7 +189,9 @@ fn parse_class_defs<'a>(input: &'a[u8], tidi: &[Rc<TypeIdentifierDataItem>], sdi
             Some(sdi[class_def_item.source_file_idx as usize].clone())
         };
 
-        v.push(ClassDefDataItem { class_type, access_flags, superclass, interfaces, source_file_name });
+//        let annotations_items =
+
+        v.push(ClassDefDataItem { class_type, access_flags, superclass, interfaces, source_file_name, });
     }
 
     Ok((buffer, v))
@@ -567,6 +569,7 @@ named_args!(parse_header(e: nom::Endianness)<&[u8], Header>,
         tag!(DEX_FILE_MAGIC)                >>
         // Followed by the version (0380 for example)
         // TODO: convert these to digits and stringify them
+        // TODO: just take(4)
         version: dbg!(count_fixed!(u8, map!(take!(1), |x| { x[0] } ), 4)) >>
         // adler32 checksum of the rest of this DEX file
         // TODO: validate this later
@@ -602,3 +605,87 @@ named_args!(parse_header(e: nom::Endianness)<&[u8], Header>,
          class_defs_off, data_size, data_off })
     )
 );
+
+named_args!(parse_annotation_item(e:nom::Endianness)<&[u8], AnnotationsDirectoryItem>,
+    do_parse!(
+        class_annotations_off: u32!(e)                                                          >>
+        fields_size: u32!(e)                                                                    >>
+        annotated_methods_size: u32!(e)                                                         >>
+        annotated_parameters_size: u32!(e)                                                      >>
+        field_annotations: opt!(count!(apply!(parse_field_annotation_item, e), fields_size as usize)) >>
+        method_annotations: opt!(count!(apply!(parse_method_annotation_item, e), annotated_methods_size as usize)) >>
+        parameter_annotations: opt!(count!(apply!(parse_parameter_annotation_item, e), annotated_parameters_size as usize)) >>
+        (AnnotationsDirectoryItem { class_annotations_off, fields_size, annotated_methods_size,
+        annotated_parameters_size, field_annotations, method_annotations, parameter_annotations })
+    )
+);
+
+named_args!(parse_field_annotation_item(e: nom::Endianness)<&[u8], FieldAnnotationItem>,
+    do_parse!(
+        field_idx: u32!(e) >>
+        annotations_offset: u32!(e) >>
+        (FieldAnnotationItem { field_idx, annotations_offset })
+    )
+);
+
+named_args!(parse_method_annotation_item(e: nom::Endianness)<&[u8], MethodAnnotationItem>,
+    do_parse!(
+        method_idx: u32!(e) >>
+        annotations_offset: u32!(e) >>
+        (MethodAnnotationItem { method_idx, annotations_offset })
+    )
+);
+
+named_args!(parse_parameter_annotation_item(e: nom::Endianness)<&[u8], ParameterAnnotationItem>,
+    do_parse!(
+        method_idx: u32!(e) >>
+        annotations_offset: u32!(e) >>
+        (ParameterAnnotationItem { method_idx, annotations_offset })
+    )
+);
+
+//class_annotations_off 	uint 	offset from the start of the file to the annotations made directly on the class, or 0 if the class has no direct annotations. The offset, if non-zero, should be to a location in the data section. The format of the data is specified by "annotation_set_item" below.
+//fields_size 	uint 	count of fields annotated by this item
+//annotated_methods_size 	uint 	count of methods annotated by this item
+//annotated_parameters_size 	uint 	count of method parameter lists annotated by tVechis item
+//field_annotations 	field_annotation[fields_size] (optional) 	list of associated field annotations. The elements of the list must be sorted in increasing order, by field_idx.
+//method_annotations 	method_annotation[methods_size] (optional) 	list of associated method annotations. The elements of the list must be sorted in increasing order, by method_idx.
+//parameter_annotations 	parameter_annotation[parameters_size] (optional) 	list of associated method parameter annotations. The elements of the list must be sorted in increasing order, by method_idx.
+
+struct AnnotationsDirectoryItem {
+    class_annotations_off: u32,
+    fields_size: u32,
+    annotated_methods_size: u32,
+    annotated_parameters_size: u32,
+    field_annotations: Option<Vec<FieldAnnotationItem>>,
+    method_annotations: Option<Vec<MethodAnnotationItem>>,
+    parameter_annotations: Option<Vec<ParameterAnnotationItem>>
+}
+
+struct FieldAnnotationItem {
+    field_idx: u32,
+    annotations_offset: u32
+}
+
+struct MethodAnnotationItem {
+    method_idx: u32,
+    annotations_offset: u32
+}
+
+struct ParameterAnnotationItem {
+    method_idx: u32,
+    annotations_offset: u32
+}
+
+////
+//Name 	Format 	Description
+//field_idx 	uint 	index into the field_ids list for the identity of the field being annotated
+//annotations_off 	uint 	offset from the start of the file to the list of annotations for the field. The offset should be to a location in the data section. The format of the data is specified by "annotation_set_item" below.
+//method_annotation format
+//Name 	Format 	Description
+//method_idx 	uint 	index into the method_ids list for the identity of the method being annotated
+//annotations_off 	uint 	offset from the start of the file to the list of annotations for the method. The offset should be to a location in the data section. The format of the data is specified by "annotation_set_item" below.
+//parameter_annotation format
+//Name 	Format 	Description
+//method_idx 	uint 	index into the method_ids list for the identity of the method whose parameters are being annotated
+//annotations_off 	uint 	offset from the start of the file to the list of annotations for the method parameters. The offset should be to a location in the data section. The format of the data is specified by "annotation_set_ref_list" below.
