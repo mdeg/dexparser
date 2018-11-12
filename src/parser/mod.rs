@@ -91,6 +91,7 @@ impl From<nom::Err<&[u8]>> for ParserErr {
     }
 }
 
+
 fn parse_dex_file(buffer: &[u8], e: nom::Endianness) -> Result<DexFile, ParserErr> {
     let (buffer, header) = parse_header(buffer, e)?;
 
@@ -105,7 +106,9 @@ fn parse_dex_file(buffer: &[u8], e: nom::Endianness) -> Result<DexFile, ParserEr
     // Pull out string data objects
     let (buffer, string_data_items) = parse_string_data(&buffer[..], &header, &data, e)?;
 
-    let (buffer, (type_id_idxs, proto_id_idxs, field_id_idxs, method_id_idxs, class_def_idxs))
+    let (buffer, type_id_data_items) = parse_type_data(&buffer, e, header.type_ids_size as usize, &string_data_items)?;
+
+    let (buffer, (proto_id_idxs, field_id_idxs, method_id_idxs, class_def_idxs))
     = parse_id_idxs(&buffer, e, &header).unwrap();
 
     let call_site_idxs = parse_u32_list(buffer, e,
@@ -113,11 +116,11 @@ fn parse_dex_file(buffer: &[u8], e: nom::Endianness) -> Result<DexFile, ParserEr
 
     let method_handle_items_idxs = parse_u32_list(buffer, e,
                                         map_list.list.iter().filter(|item| item.type_  == MapListItemType::MethodHandleItem).count());
-
-    let type_id_data_items: Vec<TypeIdentifierDataItem> = type_id_idxs.into_iter().map(|idx| {
-        // Type ID indexes are indexes into the string IDs list, which we have pulled out above
-        TypeIdentifierDataItem { descriptor: string_data_items[idx as usize].data.clone() }
-    }).collect();
+//
+//    let type_id_data_items: Vec<TypeIdentifierDataItem> = type_id_idxs.into_iter().map(|idx| {
+//        // Type ID indexes are indexes into the string IDs list, which we have pulled out above
+//        TypeIdentifierDataItem { descriptor: string_data_items[idx as usize].data.clone() }
+//    }).collect();
 
     let proto_id_data_items = proto_id_idxs.into_iter().map(|item| {
         let shorty = string_data_items[item.shorty_idx as usize].data.clone();
@@ -150,6 +153,14 @@ fn parse_dex_file(buffer: &[u8], e: nom::Endianness) -> Result<DexFile, ParserEr
         type_id_data_items,
         proto_id_data_items
     })
+}
+
+fn parse_type_data<'a>(input: &'a[u8], e: nom::Endianness, size: usize, string_data_items: &[StringDataItem]) -> Result<(&'a[u8], Vec<TypeIdentifierDataItem>), nom::Err<&'a[u8]>> {
+    let (buffer, idxs) = parse_u32_list(&input, e, size)?;
+    Ok((buffer, idxs.into_iter()
+        .map(|idx| TypeIdentifierDataItem { descriptor: string_data_items[idx as usize].data.clone() })
+        .collect()
+    ))
 }
 
 fn parse_string_data<'a>(input: &'a[u8], header: &Header, data: &'a[u8], e: nom::Endianness)
@@ -224,15 +235,14 @@ struct StringDataItem {
     data: Rc<String>
 }
 
-named_args!(parse_id_idxs <'a> ( e: nom::Endianness, header: &Header ) <&'a[u8], ( Vec<u32>,
+named_args!(parse_id_idxs <'a> ( e: nom::Endianness, header: &Header ) <&'a[u8], (
 Vec<ProtoIdItem>, Vec<FieldIdItem>, Vec<MethodIdItem>, Vec<ClassDefItem> ) >,
         do_parse!(
-            typ: apply!(parse_u32_list, e, header.type_ids_size as usize)           >>
             pro: apply!(proto_id_items, e, header.proto_ids_size as usize)          >>
             fld: apply!(field_id_items, e, header.field_ids_size as usize)          >>
             mtd: apply!(method_id_items, e, header.method_ids_size as usize)        >>
             cls: apply!(class_def_items, e, header.class_defs_size as usize)        >>
-            (typ, pro, fld, mtd, cls)
+            (pro, fld, mtd, cls)
         )
 );
 
