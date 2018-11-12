@@ -84,37 +84,35 @@ pub fn parse(buffer: &[u8]) -> Result<DexFile, ParserErr> {
     }
 }
 
-
+impl From<nom::Err<&[u8]>> for ParserErr {
+    fn from(e: nom::Err<&[u8]>) -> Self {
+        println!("error! {:?}", e);
+        ParserErr
+    }
+}
 
 fn parse_dex_file(buffer: &[u8], e: nom::Endianness) -> Result<DexFile, ParserErr> {
-    let (buffer, header) = parse_header(buffer, e).unwrap();
+    let (buffer, header) = parse_header(buffer, e)?;
 
     // Version 038 adds some new index pools with sizes not indicated in the header
     // Need to peek at this a bit early so we know how big some of the index pools are
     // Very inconvenient!
-    let map_list = match parse_map_list(&buffer[(header.map_off - header.header_size) as usize ..], e) {
-        Ok((_, map_list)) => map_list,
-        // TODO
-        Err(e) => return Err(ParserErr)
-    };
+    let map_list = parse_map_list(&buffer[(header.map_off - header.header_size) as usize ..], e)?.1;
 
-    let (buffer, (string_data_offsets, type_id_idxs, proto_id_idxs, field_id_idxs, method_id_idxs, class_def_idxs))
-    = parse_id_idxs(buffer, e, &header).unwrap();
+    // Peek ahead and pull out the data segment
+    let (_, data) = take!(&buffer[header.data_off as usize - header.header_size as usize .. ], header.data_size)?;
+
+    // Pull out string data objects
+    let (buffer, string_data_items) = parse_string_data(&buffer[..], &header, &data, e)?;
+
+    let (buffer, (type_id_idxs, proto_id_idxs, field_id_idxs, method_id_idxs, class_def_idxs))
+    = parse_id_idxs(&buffer, e, &header).unwrap();
 
     let call_site_idxs = parse_u32_list(buffer, e,
                                         map_list.list.iter().filter(|item| item.type_ == MapListItemType::CallSiteIdItem).count());
 
     let method_handle_items_idxs = parse_u32_list(buffer, e,
                                         map_list.list.iter().filter(|item| item.type_  == MapListItemType::MethodHandleItem).count());
-
-    let (buffer, data) = take!(buffer, header.data_size).unwrap();
-
-    let string_data_items: Vec<StringDataItem> = string_data_offsets.into_iter().map(|index_offset| {
-        match parse_string_data_item(&data[index_offset as usize - header.data_off as usize..]) {
-            Ok((_, item)) => item,
-            Err(e) => panic!("Could not parse string data item")
-        }
-    }).collect();
 
     let type_id_data_items: Vec<TypeIdentifierDataItem> = type_id_idxs.into_iter().map(|idx| {
         // Type ID indexes are indexes into the string IDs list, which we have pulled out above
@@ -154,6 +152,23 @@ fn parse_dex_file(buffer: &[u8], e: nom::Endianness) -> Result<DexFile, ParserEr
     })
 }
 
+fn parse_string_data<'a>(input: &'a[u8], header: &Header, data: &'a[u8], e: nom::Endianness)
+    -> Result<(&'a[u8], Vec<StringDataItem>), nom::Err<&'a[u8]>> {
+    let mut v = Vec::with_capacity(header.string_ids_size as usize);
+    // Pull out the list of offsets into data block
+    println!("size: [{}]", header.string_ids_size);
+    println!("input size: {}", input.len());
+
+    let (buffer, offsets) = parse_u32_list(input, e, header.string_ids_size as usize)?;
+
+    for offset in offsets {
+        // Offsets are given as offset from start of file, not start of data
+        // This should not consume data - offsets must be preserved
+        v.push(parse_string_data_item(&data[offset as usize - header.data_off as usize..])?.1);
+    }
+    Ok((buffer, v))
+}
+
 named_args!(parse_type_list (e: nom::Endianness) <&[u8], TypeListItem>,
     peek!(do_parse!(
             size: u32!(e) >>
@@ -164,7 +179,6 @@ named_args!(parse_type_list (e: nom::Endianness) <&[u8], TypeListItem>,
 struct TypeListItem {
     // Size of the following list
     size: u32,
-
     list: Vec<u16>
 }
 
@@ -182,6 +196,7 @@ struct TypeIdentifierDataItem {
 
 // Length of uleb128 value is determined by the
 fn determine_uleb128_length(input: &[u8]) -> usize {
+    // TODO: work out what this is actually doing
     input.iter().take_while(|byte| *byte & (0 << 0) != 0).count() + 1
 }
 
@@ -209,16 +224,15 @@ struct StringDataItem {
     data: Rc<String>
 }
 
-named_args!(parse_id_idxs <'a> ( e: nom::Endianness, header: &Header ) <&'a[u8], ( Vec<u32>, Vec<u32>,
+named_args!(parse_id_idxs <'a> ( e: nom::Endianness, header: &Header ) <&'a[u8], ( Vec<u32>,
 Vec<ProtoIdItem>, Vec<FieldIdItem>, Vec<MethodIdItem>, Vec<ClassDefItem> ) >,
         do_parse!(
-            strg: apply!(parse_u32_list, e, header.string_ids_size as usize)        >>
             typ: apply!(parse_u32_list, e, header.type_ids_size as usize)           >>
             pro: apply!(proto_id_items, e, header.proto_ids_size as usize)          >>
             fld: apply!(field_id_items, e, header.field_ids_size as usize)          >>
             mtd: apply!(method_id_items, e, header.method_ids_size as usize)        >>
             cls: apply!(class_def_items, e, header.class_defs_size as usize)        >>
-            (strg, typ, pro, fld, mtd, cls)
+            (typ, pro, fld, mtd, cls)
         )
 );
 
@@ -290,6 +304,7 @@ impl MapListItemType {
 }
 
 named_args!(parse_map_list ( e: nom::Endianness) <&[u8], MapList>,
+peek!(
     do_parse!(
         size: u32!(e)                                           >>
         list: count!(do_parse!(
@@ -301,6 +316,7 @@ named_args!(parse_map_list ( e: nom::Endianness) <&[u8], MapList>,
             ), size as usize)                                   >>
 
         (MapList { size, list })
+    )
     )
 );
 
