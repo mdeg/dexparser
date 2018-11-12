@@ -18,7 +18,8 @@ pub struct DexFile<'a> {
     type_id_data_items: Vec<Rc<TypeIdentifierDataItem>>,
     proto_id_data_items: Vec<Rc<PrototypeDataItem>>,
     field_data_items: Vec<FieldDataItem>,
-    method_data_items: Vec<MethodDataItem>
+    method_data_items: Vec<MethodDataItem>,
+    class_def_items: Vec<ClassDefDataItem>
 }
 
 #[derive(Debug)]
@@ -117,7 +118,7 @@ fn parse_dex_file(buffer: &[u8], e: nom::Endianness) -> Result<DexFile, ParserEr
 
     let (buffer, method_data_items) = parse_method_data(&buffer, &string_data_items, &type_id_data_items, &proto_id_data_items, header.method_ids_size as usize, e)?;
 
-    let (buffer, class_def_idxs) = parse_id_idxs(&buffer, e, &header).unwrap();
+    let (buffer, class_def_items) = parse_class_defs(&buffer, &type_id_data_items, &string_data_items, &data, header.data_off as usize, header.class_defs_size as usize, e)?;
 
     let call_site_idxs = parse_u32_list(buffer, e,
                                         map_list.list.iter().filter(|item| item.type_ == MapListItemType::CallSiteIdItem).count());
@@ -131,14 +132,73 @@ fn parse_dex_file(buffer: &[u8], e: nom::Endianness) -> Result<DexFile, ParserEr
         type_id_data_items,
         proto_id_data_items,
         field_data_items,
-        method_data_items
+        method_data_items,
+        class_def_items
     })
+}
+
+//class_idx 	uint 	index into the type_ids list for this class. This must be a class type, and not an array or primitive type.
+//access_flags 	uint 	access flags for the class (public, final, etc.). See "access_flags Definitions" for details.
+//superclass_idx 	uint 	index into the type_ids list for the superclass, or the constant value NO_INDEX if this class has no superclass (i.e., it is a root class such as Object). If present, this must be a class type, and not an array or primitive type.
+//interfaces_off 	uint 	offset from the start of the file to the list of interfaces, or 0 if there are none. This offset should be in the data section, and the data there should be in the format specified by "type_list" below. Each of the elements of the list must be a class type (not an array or primitive type), and there must not be any duplicates.
+//source_file_idx 	uint 	index into the string_ids list for the name of the file containing the original source for (at least most of) this class, or the special value NO_INDEX to represent a lack of this information. The debug_info_item of any given method may override this source file, but the expectation is that most classes will only come from one source file.
+//annotations_off 	uint 	offset from the start of the file to the annotations structure for this class, or 0 if there are no annotations on this class. This offset, if non-zero, should be in the data section, and the data there should be in the format specified by "annotations_directory_item" below, with all items referring to this class as the definer.
+//class_data_off 	uint 	offset from the start of the file to the associated class data for this item, or 0 if there is no class data for this class. (This may be the case, for example, if this class is a marker interface.) The offset, if non-zero, should be in the data section, and the data there should be in the format specified by "class_data_item" below, with all items referring to this class as the definer.
+//static_values_off 	uint 	offset from the start of the file to the list of initial values for static fields, or 0 if there are none (and all static fields are to be initialized with 0 or null). This offset should be in the data section, and the data there should be in the format specified by "encoded_array_item" below. The size of the array must be no larger than the number of static fields declared by this class, and the elements correspond to the static fields in the same order as declared in the corresponding field_list. The type of each array element must match the declared type of its corresponding field. If there are fewer elements in the array than there are static fields, then the leftover fields are initialized with a type-appropriate 0 or null.
+
+#[derive(Debug)]
+struct ClassDefDataItem {
+    class_type: Rc<TypeIdentifierDataItem>,
+    access_flags: Vec<AccessFlag>,
+    superclass: Option<Rc<TypeIdentifierDataItem>>,
+    interfaces: Option<Vec<Rc<TypeIdentifierDataItem>>>,
+    source_file_name: Option<Rc<StringDataItem>>
+}
+
+fn parse_class_defs<'a>(input: &'a[u8], tidi: &[Rc<TypeIdentifierDataItem>], sdi: &[Rc<StringDataItem>],
+                        data: &'a[u8], data_offset: usize,
+                        size: usize, e: nom::Endianness) -> Result<(&'a[u8], Vec<ClassDefDataItem>), nom::Err<&'a[u8]>> {
+    let mut v = Vec::with_capacity(size);
+    let (buffer, class_def_items) = parse_class_def_items(&input, e, size)?;
+    for class_def_item in class_def_items {
+        let class_type = tidi[class_def_item.class_idx as usize].clone();
+
+        // TODO
+        let access_flags = vec!();
+
+        let superclass = if class_def_item.superclass_idx == NO_INDEX {
+            None
+        } else {
+            Some(tidi[class_def_item.superclass_idx as usize].clone())
+        };
+
+        let interfaces = if class_def_item.interfaces_off == 0 {
+            None
+        } else {
+            Some(parse_type_list(&data[class_def_item.interfaces_off as usize - data_offset..], e)?
+                .1
+                .list
+                .into_iter()
+                .map(|idx| tidi[idx as usize].clone())
+                .collect())
+        };
+
+        let source_file_name = if class_def_item.source_file_idx == NO_INDEX {
+            None
+        } else {
+            Some(sdi[class_def_item.source_file_idx as usize].clone())
+        };
+
+        v.push(ClassDefDataItem { class_type, access_flags, superclass, interfaces, source_file_name });
+    }
+
+    Ok((buffer, v))
 }
 
 fn parse_prototype_data<'a>(input: &'a[u8], data: &'a[u8], sdi: &[Rc<StringDataItem>], tidi: &[Rc<TypeIdentifierDataItem>],
                             size: usize, data_offset: usize, e: nom::Endianness) -> Result<(&'a[u8], Vec<Rc<PrototypeDataItem>>), nom::Err<&'a[u8]>> {
 
-    let mut v = Vec::with_capacity(size as usize);
+    let mut v = Vec::with_capacity(size);
     let (buffer, id_items) = parse_proto_id_items(&input, e, size)?;
     for id_item in id_items {
         let shorty = sdi[id_item.shorty_idx as usize].clone();
@@ -147,7 +207,7 @@ fn parse_prototype_data<'a>(input: &'a[u8], data: &'a[u8], sdi: &[Rc<StringDataI
         let parameters = if id_item.parameters_off == 0 {
             None
         } else {
-            Some(parse_type_list_item(&data[id_item.parameters_off as usize - data_offset..], e)?
+            Some(parse_type_list(&data[id_item.parameters_off as usize - data_offset..], e)?
                 .1
                 .list
                 .into_iter()
@@ -272,13 +332,6 @@ struct StringDataItem {
     data: String
 }
 
-named_args!(parse_id_idxs<'a>(e: nom::Endianness, header: &Header ) <&'a[u8], (Vec<ClassDefItem> ) >,
-        do_parse!(
-            cls: apply!(class_def_items, e, header.class_defs_size as usize)        >>
-            ( cls)
-        )
-);
-
 named_args!(parse_u32_list(e: nom::Endianness, size: usize)<&[u8], Vec<u32>>, count!(u32!(e), size));
 
 struct MapList {
@@ -345,6 +398,59 @@ impl MapListItemType {
     }
 }
 
+//noinspection RsEnumVariantNaming
+#[derive(PartialEq, Debug)]
+enum AccessFlag {
+    ACC_PUBLIC,
+    ACC_PRIVATE,
+    ACC_PROTECTED,
+    ACC_STATIC,
+    ACC_FINAL,
+    ACC_SYNCHRONIZED,
+    ACC_VOLATILE,
+    ACC_BRIDGE,
+    ACC_TRANSIENT,
+    ACC_VARARGS,
+    ACC_NATIVE,
+    ACC_INTERFACE,
+    ACC_ABSTRACT,
+    ACC_STRICT,
+    ACC_SYNTHETIC,
+    ACC_ANNOTATION,
+    ACC_ENUM,
+    UNUSED,
+    ACC_CONSTRUCTOR,
+    ACC_DECLARED_SYNCHRONIZED
+}
+
+//impl AccessFlag {
+//    fn parse(value: u32) -> Self {
+//        match value {
+//            0x1 => AccessFlag::ACC_PUBLIC,
+//            0x2 => AccessFlag::ACC_PRIVATE,
+//            0x4 => AccessFlag::ACC_PROTECTED,
+//            0x8 => AccessFlag::ACC_STATIC,
+//            0x10 => AccessFlag::ACC_FINAL,
+//            0x20 => AccessFlag::ACC_SYNCHRONIZED,
+//            0x40 => AccessFlag::ACC_VOLATILE,
+//            0x40 => AccessFlag::ACC_BRIDGE,
+//            0x80 => AccessFlag::ACC_TRANSIENT,
+//            0x80 => AccessFlag::ACC_VARARGS,
+//            0x100 => AccessFlag::ACC_NATIVE,
+//            0x200 => AccessFlag::ACC_INTERFACE,
+//            0x400 => AccessFlag::ACC_ABSTRACT,
+//            0x800 => AccessFlag::ACC_STRICT,
+//            0x1000 => AccessFlag::ACC_SYNTHETIC,
+//            0x2000 => AccessFlag::ACC_ANNOTATION,
+//            0x4000 => AccessFlag::ACC_ENUM,
+//            0x8000 => AccessFlag::UNUSED,
+//            0x10000 => AccessFlag::ACC_CONSTRUCTOR,
+//            0x20000 => AccessFlag::ACC_DECLARED_SYNCHRONIZED,
+//            _ => panic!("No type code found for access flag {}", value)
+//        }
+//    }
+//}
+
 named_args!(parse_map_list(e: nom::Endianness)<&[u8], MapList>,
 peek!(
     do_parse!(
@@ -362,7 +468,7 @@ peek!(
     )
 );
 
-named_args!(parse_type_list_item(e: nom::Endianness)<&[u8], TypeListItem>,
+named_args!(parse_type_list(e: nom::Endianness)<&[u8], TypeListItem>,
     peek!(
         do_parse!(
             size: u32!(e)                                       >>
@@ -427,7 +533,7 @@ struct MethodIdItem {
     name_idx: u32
 }
 
-named_args!(class_def_items(e: nom::Endianness, size: usize)<&[u8], Vec<ClassDefItem>>,
+named_args!(parse_class_def_items(e: nom::Endianness, size: usize)<&[u8], Vec<ClassDefItem>>,
     count!(
         do_parse!(
             class_idx: u32!(e)                  >>
