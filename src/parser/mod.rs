@@ -167,9 +167,6 @@ fn parse_string_data<'a>(input: &'a[u8], header: &Header, data: &'a[u8], e: nom:
     -> Result<(&'a[u8], Vec<StringDataItem>), nom::Err<&'a[u8]>> {
     let mut v = Vec::with_capacity(header.string_ids_size as usize);
     // Pull out the list of offsets into data block
-    println!("size: [{}]", header.string_ids_size);
-    println!("input size: {}", input.len());
-
     let (buffer, offsets) = parse_u32_list(input, e, header.string_ids_size as usize)?;
 
     for offset in offsets {
@@ -180,12 +177,14 @@ fn parse_string_data<'a>(input: &'a[u8], header: &Header, data: &'a[u8], e: nom:
     Ok((buffer, v))
 }
 
-named_args!(parse_type_list (e: nom::Endianness) <&[u8], TypeListItem>,
-    peek!(do_parse!(
-            size: u32!(e) >>
-            list: count!(u16!(e), size as usize) >>
+named_args!(parse_type_list(e: nom::Endianness)<&[u8], TypeListItem>,
+    peek!(
+        do_parse!(
+            size: u32!(e)                                       >>
+            list: count!(u16!(e), size as usize)                >>
             (TypeListItem { size, list })
-)));
+    )
+));
 
 struct TypeListItem {
     // Size of the following list
@@ -215,9 +214,14 @@ named!(parse_string_data_item <&[u8], StringDataItem> ,
     peek!(
         do_parse!(
             // uleb128 values are 1-5 bytes long - determine how long it is so we can parse the item
-            uleb_len: peek!(map!(take!(5), determine_uleb128_length))           >>
-            utf16_size: map_res!(take!(uleb_len), read_uleb128)                >>
-            data: map!(map!(map_res!(take_until_and_consume!("\0"), str::from_utf8), str::to_string), Rc::new) >>
+            uleb_len: peek!(map!(take!(5), determine_uleb128_length))               >>
+            utf16_size: map_res!(take!(uleb_len), read_uleb128)                     >>
+            data: map!(
+                    map!(
+                        map_res!(
+                            take_until_and_consume!("\0"), str::from_utf8),
+                        str::to_string),
+                    Rc::new)                                                        >>
             (StringDataItem { utf16_size, data })
     ))
 );
@@ -246,8 +250,7 @@ Vec<ProtoIdItem>, Vec<FieldIdItem>, Vec<MethodIdItem>, Vec<ClassDefItem> ) >,
         )
 );
 
-named_args!(parse_u32_list ( e: nom::Endianness, size: usize ) <&[u8], Vec<u32> >,
-    count!(u32!(e), size));
+named_args!(parse_u32_list(e: nom::Endianness, size: usize)<&[u8], Vec<u32>>, count!(u32!(e), size));
 
 struct MapList {
     size: u32,
@@ -313,7 +316,7 @@ impl MapListItemType {
     }
 }
 
-named_args!(parse_map_list ( e: nom::Endianness) <&[u8], MapList>,
+named_args!(parse_map_list(e: nom::Endianness)<&[u8], MapList>,
 peek!(
     do_parse!(
         size: u32!(e)                                           >>
@@ -330,14 +333,14 @@ peek!(
     )
 );
 
-named_args!(proto_id_items ( e: nom::Endianness, s: usize ) <&[u8], Vec<ProtoIdItem> >,
+named_args!(proto_id_items(e: nom::Endianness, size: usize)<&[u8], Vec<ProtoIdItem>>,
     count!(
         do_parse!(
             shorty_idx: u32!(e)         >>
             return_type_idx: u32!(e)    >>
             parameters_off: u32!(e)     >>
             (ProtoIdItem { shorty_idx, return_type_idx, parameters_off })
-        ), s)
+        ), size)
 );
 
 struct ProtoIdItem {
@@ -348,14 +351,14 @@ struct ProtoIdItem {
     parameters_off: u32
 }
 
-named_args!(field_id_items ( e: nom::Endianness, s: usize ) <&[u8], Vec<FieldIdItem> >,
+named_args!(field_id_items(e: nom::Endianness, size: usize)<&[u8], Vec<FieldIdItem>>,
     count!(
         do_parse!(
-            class_idx: u16!(e)  >>
-            type_idx: u16!(e)   >>
-            name_idx: u32!(e)   >>
+            class_idx: u16!(e)                                  >>
+            type_idx: u16!(e)                                   >>
+            name_idx: u32!(e)                                   >>
             (FieldIdItem { class_idx, type_idx, name_idx })
-        ), s)
+        ), size)
 );
 
 struct FieldIdItem {
@@ -364,14 +367,14 @@ struct FieldIdItem {
     name_idx: u32
 }
 
-named_args!(method_id_items ( e: nom::Endianness, s: usize ) <&[u8], Vec<MethodIdItem> >,
+named_args!(method_id_items(e: nom::Endianness, size: usize)<&[u8], Vec<MethodIdItem>>,
     count!(
         do_parse!(
-            class_idx: u16!(e)  >>
-            proto_idx: u16!(e)   >>
-            name_idx: u32!(e)   >>
+            class_idx: u16!(e)                                  >>
+            proto_idx: u16!(e)                                  >>
+            name_idx: u32!(e)                                   >>
             (MethodIdItem { class_idx, proto_idx, name_idx })
-        ), s)
+        ), size)
 );
 
 struct MethodIdItem {
@@ -380,7 +383,7 @@ struct MethodIdItem {
     name_idx: u32
 }
 
-named_args!(class_def_items ( e: nom::Endianness, s: usize ) <&[u8], Vec<ClassDefItem> >,
+named_args!(class_def_items(e: nom::Endianness, size: usize)<&[u8], Vec<ClassDefItem>>,
     count!(
         do_parse!(
             class_idx: u32!(e)                  >>
@@ -394,7 +397,7 @@ named_args!(class_def_items ( e: nom::Endianness, s: usize ) <&[u8], Vec<ClassDe
 
             (ClassDefItem { class_idx, access_flags, superclass_idx, interfaces_off,
             source_file_idx, annotations_off, class_data_off, static_values_off})
-        ), s)
+        ), size)
 );
 
 struct ClassDefItem {
@@ -408,7 +411,7 @@ struct ClassDefItem {
     static_values_off: u32
 }
 
-named_args!(parse_header ( e: nom::Endianness ) <&[u8], Header>,
+named_args!(parse_header(e: nom::Endianness)<&[u8], Header>,
     do_parse!(
         // Little bit of magic at the start
         tag!(DEX_FILE_MAGIC)                >>
