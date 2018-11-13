@@ -1,3 +1,5 @@
+mod encoded_value;
+
 use nom::*;
 use std::str;
 use std::rc::Rc;
@@ -17,7 +19,7 @@ pub struct DexFile<'a> {
     string_data_items: Vec<Rc<StringDataItem>>,
     type_id_data_items: Vec<Rc<TypeIdentifierDataItem>>,
     proto_id_data_items: Vec<Rc<PrototypeDataItem>>,
-    field_data_items: Vec<FieldDataItem>,
+    field_data_items: Vec<Rc<FieldDataItem>>,
     method_data_items: Vec<MethodDataItem>,
     class_def_items: Vec<ClassDefDataItem>
 }
@@ -118,7 +120,7 @@ fn parse_dex_file(buffer: &[u8], e: nom::Endianness) -> Result<DexFile, ParserEr
 
     let (buffer, method_data_items) = parse_method_data(&buffer, &string_data_items, &type_id_data_items, &proto_id_data_items, header.method_ids_size as usize, e)?;
 
-    let (buffer, class_def_items) = parse_class_defs(&buffer, &type_id_data_items, &string_data_items, &data, header.data_off as usize, header.class_defs_size as usize, e)?;
+    let (buffer, class_def_items) = parse_class_defs(&buffer, &type_id_data_items, &string_data_items, &field_data_items, &data, header.data_off as usize, header.class_defs_size as usize, e)?;
 
     let call_site_idxs = parse_u32_list(buffer, e,
                                         map_list.list.iter().filter(|item| item.type_ == MapListItemType::CallSiteIdItem).count());
@@ -137,15 +139,6 @@ fn parse_dex_file(buffer: &[u8], e: nom::Endianness) -> Result<DexFile, ParserEr
     })
 }
 
-//class_idx 	uint 	index into the type_ids list for this class. This must be a class type, and not an array or primitive type.
-//access_flags 	uint 	access flags for the class (public, final, etc.). See "access_flags Definitions" for details.
-//superclass_idx 	uint 	index into the type_ids list for the superclass, or the constant value NO_INDEX if this class has no superclass (i.e., it is a root class such as Object). If present, this must be a class type, and not an array or primitive type.
-//interfaces_off 	uint 	offset from the start of the file to the list of interfaces, or 0 if there are none. This offset should be in the data section, and the data there should be in the format specified by "type_list" below. Each of the elements of the list must be a class type (not an array or primitive type), and there must not be any duplicates.
-//source_file_idx 	uint 	index into the string_ids list for the name of the file containing the original source for (at least most of) this class, or the special value NO_INDEX to represent a lack of this information. The debug_info_item of any given method may override this source file, but the expectation is that most classes will only come from one source file.
-//annotations_off 	uint 	offset from the start of the file to the annotations structure for this class, or 0 if there are no annotations on this class. This offset, if non-zero, should be in the data section, and the data there should be in the format specified by "annotations_directory_item" below, with all items referring to this class as the definer.
-//class_data_off 	uint 	offset from the start of the file to the associated class data for this item, or 0 if there is no class data for this class. (This may be the case, for example, if this class is a marker interface.) The offset, if non-zero, should be in the data section, and the data there should be in the format specified by "class_data_item" below, with all items referring to this class as the definer.
-//static_values_off 	uint 	offset from the start of the file to the list of initial values for static fields, or 0 if there are none (and all static fields are to be initialized with 0 or null). This offset should be in the data section, and the data there should be in the format specified by "encoded_array_item" below. The size of the array must be no larger than the number of static fields declared by this class, and the elements correspond to the static fields in the same order as declared in the corresponding field_list. The type of each array element must match the declared type of its corresponding field. If there are fewer elements in the array than there are static fields, then the leftover fields are initialized with a type-appropriate 0 or null.
-
 #[derive(Debug)]
 struct ClassDefDataItem {
     class_type: Rc<TypeIdentifierDataItem>,
@@ -156,8 +149,8 @@ struct ClassDefDataItem {
 }
 
 fn parse_class_defs<'a>(input: &'a[u8], tidi: &[Rc<TypeIdentifierDataItem>], sdi: &[Rc<StringDataItem>],
-                        data: &'a[u8], data_offset: usize,
-                        size: usize, e: nom::Endianness) -> Result<(&'a[u8], Vec<ClassDefDataItem>), nom::Err<&'a[u8]>> {
+                        fdi: &[Rc<FieldDataItem>], data: &'a[u8], data_offset: usize, size: usize, e: nom::Endianness)
+                        -> Result<(&'a[u8], Vec<ClassDefDataItem>), nom::Err<&'a[u8]>> {
     let mut v = Vec::with_capacity(size);
     let (buffer, class_def_items) = parse_class_def_items(&input, e, size)?;
     for class_def_item in class_def_items {
@@ -189,13 +182,65 @@ fn parse_class_defs<'a>(input: &'a[u8], tidi: &[Rc<TypeIdentifierDataItem>], sdi
             Some(sdi[class_def_item.source_file_idx as usize].clone())
         };
 
-//        let annotations_items =
+        // AnnotationDirectoryItem contains an offset to the start of class_annotations
+        let (_, annotation_directory_item) = parse_annotation_directory_item(&data, e)?;
+
+        // annotation_set_item contains a size and a list of annotation_off_items
+        // annotation_off_items are each an offset to an annotation_itemlet (input, value) =
+        // annotation_item contains a visibility and an annotation
+        // an annotation is in the format EncodedAnnotationItem
+
+//        let mut class_annotations = vec!();
+        // class_annotations_off points to an annotation_set_item
+        // which contains a size, and a list of entries, which is a vec of offsets to annotation_set_item's
+        if annotation_directory_item.class_annotations_off != 0 {
+            let (_, set_item) = parse_annotation_set_item(
+                &data[annotation_directory_item.class_annotations_off as usize - data_offset..], e)?;
+
+            // Each entry here is an offset to an annotation_item
+            for annotation_offset in set_item.entries {
+                // Every annotation item contains a visibility and an annotation
+                // The annotations are in the format encoded_annotaiton_item
+                let annotation = parse_annotation_item(&data[annotation_offset as usize - data_offset..], e)?;
+            }
+
+
+        };
 
         v.push(ClassDefDataItem { class_type, access_flags, superclass, interfaces, source_file_name, });
     }
 
     Ok((buffer, v))
 }
+
+trace_macros!(true);
+
+
+named_args!(parse_annotation_item(e: nom::Endianness)<&[u8], AnnotationItem>,
+    peek!(do_parse!(
+        visibility: map!(take!(1), |x| {x[0]})  >>
+        annotation: apply!(encoded_value::parse_encoded_value_item, e)    >>
+        (AnnotationItem { visibility, annotation })
+)));
+
+trace_macros!(false);
+
+
+struct AnnotationItem {
+    visibility: u8,
+    annotation: encoded_value::EncodedValueItem
+}
+//?
+
+// TODO: convert to annotationelementdataitem
+struct AnnotationElementItem {
+    name_idx: u64,
+    value: encoded_value::EncodedValueItem
+}
+//
+//struct AnnotationsDirectoryDataItem {
+//    class_annotations: Vec<AnnotationSetDataItem>
+//}
 
 fn parse_prototype_data<'a>(input: &'a[u8], data: &'a[u8], sdi: &[Rc<StringDataItem>], tidi: &[Rc<TypeIdentifierDataItem>],
                             size: usize, data_offset: usize, e: nom::Endianness) -> Result<(&'a[u8], Vec<Rc<PrototypeDataItem>>), nom::Err<&'a[u8]>> {
@@ -246,16 +291,16 @@ struct MethodDataItem {
 }
 
 fn parse_field_data<'a>(input: &'a[u8], sdi: &[Rc<StringDataItem>], tidi: &[Rc<TypeIdentifierDataItem>],
-                        size: usize, e: nom::Endianness) -> Result<(&'a[u8], Vec<FieldDataItem>), nom::Err<&'a[u8]>> {
+                        size: usize, e: nom::Endianness) -> Result<(&'a[u8], Vec<Rc<FieldDataItem>>), nom::Err<&'a[u8]>> {
     let (input, items) = parse_field_id_items(&input, e, size)?;
 
     Ok((input,
         items.into_iter().map(|item| {
-            FieldDataItem {
+            Rc::new(FieldDataItem {
                 definer: tidi[item.class_idx as usize].clone(),
                 type_: tidi[item.type_idx as usize].clone(),
                 name: sdi[item.name_idx as usize].clone()
-            }
+            })
         }).collect())
     )
 }
@@ -425,6 +470,7 @@ enum AccessFlag {
     ACC_DECLARED_SYNCHRONIZED
 }
 
+// TODO
 //impl AccessFlag {
 //    fn parse(value: u32) -> Self {
 //        match value {
@@ -606,15 +652,15 @@ named_args!(parse_header(e: nom::Endianness)<&[u8], Header>,
     )
 );
 
-named_args!(parse_annotation_item(e:nom::Endianness)<&[u8], AnnotationsDirectoryItem>,
+named_args!(parse_annotation_directory_item(e:nom::Endianness)<&[u8], AnnotationsDirectoryItem>,
     do_parse!(
         class_annotations_off: u32!(e)                                                          >>
         fields_size: u32!(e)                                                                    >>
         annotated_methods_size: u32!(e)                                                         >>
         annotated_parameters_size: u32!(e)                                                      >>
-        field_annotations: opt!(count!(apply!(parse_field_annotation_item, e), fields_size as usize)) >>
-        method_annotations: opt!(count!(apply!(parse_method_annotation_item, e), annotated_methods_size as usize)) >>
-        parameter_annotations: opt!(count!(apply!(parse_parameter_annotation_item, e), annotated_parameters_size as usize)) >>
+        field_annotations: count!(apply!(parse_field_annotation_item, e), fields_size as usize) >>
+        method_annotations: count!(apply!(parse_method_annotation_item, e), annotated_methods_size as usize) >>
+        parameter_annotations: count!(apply!(parse_parameter_annotation_item, e), annotated_parameters_size as usize) >>
         (AnnotationsDirectoryItem { class_annotations_off, fields_size, annotated_methods_size,
         annotated_parameters_size, field_annotations, method_annotations, parameter_annotations })
     )
@@ -644,22 +690,14 @@ named_args!(parse_parameter_annotation_item(e: nom::Endianness)<&[u8], Parameter
     )
 );
 
-//class_annotations_off 	uint 	offset from the start of the file to the annotations made directly on the class, or 0 if the class has no direct annotations. The offset, if non-zero, should be to a location in the data section. The format of the data is specified by "annotation_set_item" below.
-//fields_size 	uint 	count of fields annotated by this item
-//annotated_methods_size 	uint 	count of methods annotated by this item
-//annotated_parameters_size 	uint 	count of method parameter lists annotated by tVechis item
-//field_annotations 	field_annotation[fields_size] (optional) 	list of associated field annotations. The elements of the list must be sorted in increasing order, by field_idx.
-//method_annotations 	method_annotation[methods_size] (optional) 	list of associated method annotations. The elements of the list must be sorted in increasing order, by method_idx.
-//parameter_annotations 	parameter_annotation[parameters_size] (optional) 	list of associated method parameter annotations. The elements of the list must be sorted in increasing order, by method_idx.
-
 struct AnnotationsDirectoryItem {
     class_annotations_off: u32,
     fields_size: u32,
     annotated_methods_size: u32,
     annotated_parameters_size: u32,
-    field_annotations: Option<Vec<FieldAnnotationItem>>,
-    method_annotations: Option<Vec<MethodAnnotationItem>>,
-    parameter_annotations: Option<Vec<ParameterAnnotationItem>>
+    field_annotations: Vec<FieldAnnotationItem>,
+    method_annotations: Vec<MethodAnnotationItem>,
+    parameter_annotations: Vec<ParameterAnnotationItem>
 }
 
 struct FieldAnnotationItem {
@@ -677,15 +715,15 @@ struct ParameterAnnotationItem {
     annotations_offset: u32
 }
 
-////
-//Name 	Format 	Description
-//field_idx 	uint 	index into the field_ids list for the identity of the field being annotated
-//annotations_off 	uint 	offset from the start of the file to the list of annotations for the field. The offset should be to a location in the data section. The format of the data is specified by "annotation_set_item" below.
-//method_annotation format
-//Name 	Format 	Description
-//method_idx 	uint 	index into the method_ids list for the identity of the method being annotated
-//annotations_off 	uint 	offset from the start of the file to the list of annotations for the method. The offset should be to a location in the data section. The format of the data is specified by "annotation_set_item" below.
-//parameter_annotation format
-//Name 	Format 	Description
-//method_idx 	uint 	index into the method_ids list for the identity of the method whose parameters are being annotated
-//annotations_off 	uint 	offset from the start of the file to the list of annotations for the method parameters. The offset should be to a location in the data section. The format of the data is specified by "annotation_set_ref_list" below.
+struct AnnotationSetItem {
+    size: u32,
+    entries: Vec<u32>
+}
+
+named_args!(parse_annotation_set_item(e: nom::Endianness)<&[u8], AnnotationSetItem>,
+    do_parse!(
+        size: u32!(e)                               >>
+        entries: count!(u32!(e), size as usize)     >>
+        (AnnotationSetItem { size, entries })
+    )
+);
