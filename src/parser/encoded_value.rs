@@ -1,54 +1,92 @@
-pub struct EncodedValueItem {
-    value_type: EncodedValueType,
-    value: Vec<u8>
-}
-
-pub struct EncodedValueDataItem<T> {
-    value_type: EncodedValueType,
-    value: T
-}
-
-
-named_args!(pub parse_encoded_value_item(e: nom::Endianness)<&[u8], EncodedValueItem>,
-    do_parse!(
-        value_type: map!(take!(1), |x| { EncodedValueType::parse(x[0]) }) >>
-        value: map!(take!(value_type.len()), Vec::from) >>
-        (EncodedValueItem { value_type, value })
+named_args!(pub parse_encoded_value_item(e: nom::Endianness)<&[u8], EncodedValue>,
+    peek!(
+        do_parse!(
+            value_type: map!(take!(1), |x| {x[0]}) >>
+            value: apply!(parse_value, value_type, e) >>
+            (value)
+        )
     )
 );
 
-//
-//struct EncodedAnnotationItem {
-//    type_idx: u64,
-//    size: u64,
-//    elements: Vec<AnnotationElementItem>
-//}
+// TODO: this is always little endian?
+fn parse_value(value: &[u8], value_type: u8, e: nom::Endianness) -> Result<((), EncodedValue), nom::Err<&[u8]>> {
+    // The high order 3 bits of the value typemay contain useful size information or data
+    let value_arg = value_type & 0xE0;
 
+    let value = match EncodedValueType::parse(value_arg & 0x1F) {
+        EncodedValueType::Byte => EncodedValue::Byte(take!(value, 1)?.1[0]),
+        EncodedValueType::Short => EncodedValue::Short(i16!(value, e)?.1),
+        EncodedValueType::Char => EncodedValue::Char(u16!(value, e)?.1),
+        EncodedValueType::Int => EncodedValue::Int(i32!(value, e)?.1),
+        EncodedValueType::Long => EncodedValue::Long(i64!(value, e)?.1),
+        EncodedValueType::Float => unimplemented!(),
+        EncodedValueType::Double => unimplemented!(),
+        EncodedValueType::MethodType => EncodedValue::MethodType(u32!(value, e)?.1),
+        EncodedValueType::MethodHandle => EncodedValue::MethodHandle(u32!(value, e)?.1),
+        EncodedValueType::String => EncodedValue::String(u32!(value, e)?.1),
+        EncodedValueType::Type => EncodedValue::Type(u32!(value, e)?.1),
+        EncodedValueType::Field => EncodedValue::Field(u32!(value, e)?.1),
+        EncodedValueType::Method => EncodedValue::Method(u32!(value, e)?.1),
+        EncodedValueType::Enum => EncodedValue::Enum(u32!(value, e)?.1),
+        EncodedValueType::Array => unimplemented!(),
+        EncodedValueType::Annotation => unimplemented!(),
+        EncodedValueType::Null => EncodedValue::Null,
+        // The value for boolean types is the last bit of the value arg
+        EncodedValueType::Boolean => EncodedValue::Boolean((value_arg & 0x01) == 1),
+        _ => unimplemented!()
+//        _ => return nom::Err::Failure(nom::Context::Code(ErrorKind))
+        // TODO:return result on unknwon tye
+    };
 
+    Ok(((), value))
+}
 
-//Value formats
-//Type Name 	value_type 	value_arg Format 	value Format 	Description
-//VALUE_BYTE 	0x00 	(none; must be 0) 	ubyte[1] 	signed one-byte integer value
-//VALUE_SHORT 	0x02 	size - 1 (0…1) 	ubyte[size] 	signed two-byte integer value, sign-extended
-//VALUE_CHAR 	0x03 	size - 1 (0…1) 	ubyte[size] 	unsigned two-byte integer value, zero-extended
-//VALUE_INT 	0x04 	size - 1 (0…3) 	ubyte[size] 	signed four-byte integer value, sign-extended
-//VALUE_LONG 	0x06 	size - 1 (0…7) 	ubyte[size] 	signed eight-byte integer value, sign-extended
-//VALUE_FLOAT 	0x10 	size - 1 (0…3) 	ubyte[size] 	four-byte bit pattern, zero-extended to the right, and interpreted as an IEEE754 32-bit floating point value
-//VALUE_DOUBLE 	0x11 	size - 1 (0…7) 	ubyte[size] 	eight-byte bit pattern, zero-extended to the right, and interpreted as an IEEE754 64-bit floating point value
-//VALUE_METHOD_TYPE 	0x15 	size - 1 (0…3) 	ubyte[size] 	unsigned (zero-extended) four-byte integer value, interpreted as an index into the proto_ids section and representing a method type value
-//VALUE_METHOD_HANDLE 	0x16 	size - 1 (0…3) 	ubyte[size] 	unsigned (zero-extended) four-byte integer value, interpreted as an index into the method_handles section and representing a method handle value
-//VALUE_STRING 	0x17 	size - 1 (0…3) 	ubyte[size] 	unsigned (zero-extended) four-byte integer value, interpreted as an index into the string_ids section and representing a string value
-//VALUE_TYPE 	0x18 	size - 1 (0…3) 	ubyte[size] 	unsigned (zero-extended) four-byte integer value, interpreted as an index into the type_ids section and representing a reflective type/class value
-//VALUE_FIELD 	0x19 	size - 1 (0…3) 	ubyte[size] 	unsigned (zero-extended) four-byte integer value, interpreted as an index into the field_ids section and representing a reflective field value
-//VALUE_METHOD 	0x1a 	size - 1 (0…3) 	ubyte[size] 	unsigned (zero-extended) four-byte integer value, interpreted as an index into the method_ids section and representing a reflective method value
-//VALUE_ENUM 	0x1b 	size - 1 (0…3) 	ubyte[size] 	unsigned (zero-extended) four-byte integer value, interpreted as an index into the field_ids section and representing the value of an enumerated type constant
-//VALUE_ARRAY 	0x1c 	(none; must be 0) 	encoded_array 	an array of values, in the format specified by "encoded_array format" below. The size of the value is implicit in the encoding.
-//VALUE_ANNOTATION 	0x1d 	(none; must be 0) 	encoded_annotation 	a sub-annotation, in the format specified by "encoded_annotation format" below. The size of the value is implicit in the encoding.
-//VALUE_NULL 	0x1e 	(none; must be 0) 	(none) 	null reference value
-//VALUE_BOOLEAN 	0x1f 	boolean (0…1) 	(none) 	one-bit value; 0 for false and 1 for true. The bit is represented in the value_arg.
+#[derive(Debug)]
+struct EncodedAnnotationItem {
+    type_idx: u64,
+    size: u64,
+    elements: Vec<AnnotationElementItem>
+}
+
+#[derive(Debug)]
+struct AnnotationElementItem {
+    name_idx: u64,
+    value: EncodedValue
+}
+
+//            uleb_len: peek!(map!(take!(5), determine_uleb128_length))               >>
+//            utf16_size: map_res!(take!(uleb_len), read_uleb128)                     >>
 
 // parse value type, then get length and parse value based on that
+#[derive(Debug)]
+pub enum EncodedValue {
+    Byte(u8),
+    Short(i16),
+    Char(u16),
+    Int(i32),
+    Long(i64),
+    Float(f32),
+    Double(f64),
+    MethodType(u32),
+    MethodHandle(u32),
+    String(u32),
+    Type(u32),
+    Field(u32),
+    Method(u32),
+    Enum(u32),
+    Array(EncodedArrayItem),
+    Annotation(EncodedAnnotationItem),
+    Null,
+    Boolean(bool)
+}
 
+#[derive(Debug)]
+struct EncodedArrayItem {
+
+}
+
+
+#[derive(Debug)]
 enum EncodedValueType {
     Byte,
     Short,
@@ -85,20 +123,14 @@ impl EncodedValueType {
             0x17 => EncodedValueType::String,
             0x18 => EncodedValueType::Type,
             0x19 => EncodedValueType::Field,
-            0x1a => EncodedValueType::Method,
-            0x1b => EncodedValueType::Enum,
-            0x1c => EncodedValueType::Array,
-            0x1d => EncodedValueType::Annotation,
-            0x1e => EncodedValueType::Null,
-            0x1f => EncodedValueType::Boolean,
-            _ => panic!("Could not find encoded value type for {}", value)
-        }
-    }
-
-    fn len(&self) -> usize {
-        match self {
-            EncodedValueType::Byte => 1,
-            _ => unimplemented!()
+            0x1A => EncodedValueType::Method,
+            0x1B => EncodedValueType::Enum,
+            0x1C => EncodedValueType::Array,
+            0x1D => EncodedValueType::Annotation,
+            0x1E => EncodedValueType::Null,
+            0x1F => EncodedValueType::Boolean,
+            // TODO: return result
+            _ => panic!("Could not find encoded value type 0x{:02X}", value)
         }
     }
 }

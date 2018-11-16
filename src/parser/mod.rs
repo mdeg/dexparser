@@ -182,30 +182,49 @@ fn parse_class_defs<'a>(input: &'a[u8], tidi: &[Rc<TypeIdentifierDataItem>], sdi
             Some(sdi[class_def_item.source_file_idx as usize].clone())
         };
 
+//
+//            (ClassDefItem { class_idx, access_flags, superclass_idx, interfaces_off,
+//            source_file_idx, annotations_off, class_data_off, static_values_off})
         // AnnotationDirectoryItem contains an offset to the start of class_annotations
-        let (_, annotation_directory_item) = parse_annotation_directory_item(&data, e)?;
 
-        // annotation_set_item contains a size and a list of annotation_off_items
-        // annotation_off_items are each an offset to an annotation_itemlet (input, value) =
-        // annotation_item contains a visibility and an annotation
-        // an annotation is in the format EncodedAnnotationItem
+        let annotation_directory_data_item = if class_def_item.annotations_off == 0 {
+            None
+        } else {
+            let adi_offset = class_def_item.annotations_off as usize - data_offset;
+            let (_, adi) = parse_annotations_directory_item(&data[adi_offset..], e)?;
+
+            // annotation_set_item contains a size and a list of annotation_off_items
+            // annotation_off_items are each an offset to an annotation_itemlet (input, value) =
+            // annotation_item contains a visibility and an annotation
+            // an annotation is in the format EncodedAnnotationItem
 
 //        let mut class_annotations = vec!();
-        // class_annotations_off points to an annotation_set_item
-        // which contains a size, and a list of entries, which is a vec of offsets to annotation_set_item's
-        if annotation_directory_item.class_annotations_off != 0 {
-            let (_, set_item) = parse_annotation_set_item(
-                &data[annotation_directory_item.class_annotations_off as usize - data_offset..], e)?;
-
-            // Each entry here is an offset to an annotation_item
-            for annotation_offset in set_item.entries {
-                // Every annotation item contains a visibility and an annotation
-                // The annotations are in the format encoded_annotaiton_item
-                let annotation = parse_annotation_item(&data[annotation_offset as usize - data_offset..], e)?;
-            }
+            // class_annotations_off points to an annotation_set_item
+            // which contains a size, and a list of entries, which is a vec of offsets to annotation_set_item's
 
 
+            if adi.class_annotations_off != 0 {
+
+                let (_, set_item) = parse_annotation_set_item(
+                    &data[adi.class_annotations_off as usize - data_offset..], e)?;
+
+                // Each entry here is an offset to an annotation_item
+                for annotation_offset in set_item.entries {
+                    // Every annotation item contains a visibility and an annotation
+                    // The annotations are in the format encoded_annotaiton_item
+
+                    let (_, annotation) = parse_annotation_item(&data[annotation_offset as usize - data_offset..], e)?;
+                    println!("annotation: {:?}", annotation);
+                }
+
+            };
+
+            //1011 1110 - should actually be 1E
+
+            //TODO
+            Some(AnnotationsDirectoryDataItem {})
         };
+
 
         v.push(ClassDefDataItem { class_type, access_flags, superclass, interfaces, source_file_name, });
     }
@@ -213,29 +232,47 @@ fn parse_class_defs<'a>(input: &'a[u8], tidi: &[Rc<TypeIdentifierDataItem>], sdi
     Ok((buffer, v))
 }
 
-trace_macros!(true);
+struct AnnotationsDirectoryDataItem {
+
+}
 
 
 named_args!(parse_annotation_item(e: nom::Endianness)<&[u8], AnnotationItem>,
     peek!(do_parse!(
-        visibility: map!(take!(1), |x| {x[0]})  >>
+        visibility: map!(take!(1), |x| { Visibility::parse(x[0]) })  >>
         annotation: apply!(encoded_value::parse_encoded_value_item, e)    >>
         (AnnotationItem { visibility, annotation })
 )));
 
-trace_macros!(false);
 
-
+#[derive(Debug)]
 struct AnnotationItem {
-    visibility: u8,
-    annotation: encoded_value::EncodedValueItem
+    visibility: Visibility,
+    annotation: encoded_value::EncodedValue
 }
-//?
+
+#[derive(Debug)]
+enum Visibility {
+    BUILD,
+    RUNTIME,
+    SYSTEM
+}
+
+impl Visibility {
+    fn parse(value: u8) -> Self {
+        match value {
+            0x00 => Visibility::BUILD,
+            0x01 => Visibility::RUNTIME,
+            0x02 => Visibility::SYSTEM,
+            _ => panic!("Could not find visibility for value 0x{:0X}", value)
+        }
+    }
+}
 
 // TODO: convert to annotationelementdataitem
 struct AnnotationElementItem {
     name_idx: u64,
-    value: encoded_value::EncodedValueItem
+    value: encoded_value::EncodedValue
 }
 //
 //struct AnnotationsDirectoryDataItem {
@@ -500,19 +537,19 @@ enum AccessFlag {
 //}
 
 named_args!(parse_map_list(e: nom::Endianness)<&[u8], MapList>,
-peek!(
-    do_parse!(
-        size: u32!(e)                                           >>
-        list: count!(do_parse!(
-                type_: map!(u16!(e), MapListItemType::parse)    >>
-                unused: u16!(e)                                 >>
-                size: u32!(e)                                   >>
-                offset: u32!(e)                                 >>
-                (MapListItem { type_, unused, size, offset })
-            ), size as usize)                                   >>
+    peek!(
+        do_parse!(
+            size: u32!(e)                                           >>
+            list: count!(do_parse!(
+                    type_: map!(u16!(e), MapListItemType::parse)    >>
+                    unused: u16!(e)                                 >>
+                    size: u32!(e)                                   >>
+                    offset: u32!(e)                                 >>
+                    (MapListItem { type_, unused, size, offset })
+                ), size as usize)                                   >>
 
-        (MapList { size, list })
-    )
+            (MapList { size, list })
+        )
     )
 );
 
@@ -652,8 +689,8 @@ named_args!(parse_header(e: nom::Endianness)<&[u8], Header>,
     )
 );
 
-named_args!(parse_annotation_directory_item(e:nom::Endianness)<&[u8], AnnotationsDirectoryItem>,
-    do_parse!(
+named_args!(parse_annotations_directory_item(e:nom::Endianness)<&[u8], AnnotationsDirectoryItem>,
+    peek!(do_parse!(
         class_annotations_off: u32!(e)                                                          >>
         fields_size: u32!(e)                                                                    >>
         annotated_methods_size: u32!(e)                                                         >>
@@ -663,7 +700,7 @@ named_args!(parse_annotation_directory_item(e:nom::Endianness)<&[u8], Annotation
         parameter_annotations: count!(apply!(parse_parameter_annotation_item, e), annotated_parameters_size as usize) >>
         (AnnotationsDirectoryItem { class_annotations_off, fields_size, annotated_methods_size,
         annotated_parameters_size, field_annotations, method_annotations, parameter_annotations })
-    )
+    ))
 );
 
 named_args!(parse_field_annotation_item(e: nom::Endianness)<&[u8], FieldAnnotationItem>,
@@ -690,6 +727,7 @@ named_args!(parse_parameter_annotation_item(e: nom::Endianness)<&[u8], Parameter
     )
 );
 
+#[derive(Debug)]
 struct AnnotationsDirectoryItem {
     class_annotations_off: u32,
     fields_size: u32,
@@ -700,30 +738,36 @@ struct AnnotationsDirectoryItem {
     parameter_annotations: Vec<ParameterAnnotationItem>
 }
 
+#[derive(Debug)]
 struct FieldAnnotationItem {
     field_idx: u32,
     annotations_offset: u32
 }
 
+#[derive(Debug)]
 struct MethodAnnotationItem {
     method_idx: u32,
     annotations_offset: u32
 }
 
+#[derive(Debug)]
 struct ParameterAnnotationItem {
     method_idx: u32,
     annotations_offset: u32
 }
 
+#[derive(Debug)]
 struct AnnotationSetItem {
     size: u32,
     entries: Vec<u32>
 }
 
 named_args!(parse_annotation_set_item(e: nom::Endianness)<&[u8], AnnotationSetItem>,
-    do_parse!(
-        size: u32!(e)                               >>
-        entries: count!(u32!(e), size as usize)     >>
-        (AnnotationSetItem { size, entries })
+    peek!(
+        do_parse!(
+            size: u32!(e)                               >>
+            entries: count!(u32!(e), size as usize)     >>
+            (AnnotationSetItem { size, entries })
+        )
     )
 );
