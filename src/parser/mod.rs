@@ -208,8 +208,21 @@ fn parse_class_defs<'a>(input: &'a[u8], tidi: &[Rc<TypeIdentifierDataItem>], sdi
                     // Every annotation item contains a visibility and an annotation
                     // The annotations are in the format encoded_annotaiton_item
 
-                    let (_, annotation) = parse_annotation_item(&data[annotation_offset as usize - data_offset..], e)?;
+                    let (_, annotation_item) = parse_annotation_item(&data[annotation_offset as usize - data_offset..], e)?;
+
+                    let annotation = Annotation {
+                            visibility: annotation_item.visibility,
+                            type_: tidi[annotation_item.annotation.type_idx as usize].clone(),
+                            elements: annotation_item.annotation.elements.into_iter().map(|item| {
+                                AnnotationElement {
+                                    name: sdi[item.name_idx as usize].clone(),
+                                    value: item.value
+                                }
+                            }).collect()
+                    };
+
                     println!("Annotation: {:#?}", annotation);
+                    
                 }
             };
 
@@ -235,6 +248,18 @@ named_args!(parse_annotation_item(e: nom::Endianness)<&[u8], AnnotationItem>,
         (AnnotationItem { visibility, annotation })
 )));
 
+#[derive(Debug)]
+struct Annotation {
+    visibility: Visibility,
+    type_: Rc<TypeIdentifierDataItem>,
+    elements: Vec<AnnotationElement>
+}
+
+#[derive(Debug)]
+struct AnnotationElement {
+    name: Rc<StringDataItem>,
+    value: encoded_value::EncodedValue
+}
 
 #[derive(Debug)]
 struct AnnotationItem {

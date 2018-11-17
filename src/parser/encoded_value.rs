@@ -35,10 +35,7 @@ fn parse_value(value: &[u8], value_type: u8, e: nom::Endianness) -> Result<((), 
         EncodedValueType::Annotation => EncodedValue::Annotation(parse_encoded_annotation_item(value, e)?.1),
         EncodedValueType::Null => EncodedValue::Null,
         // The value for boolean types is the last bit of the value arg
-        EncodedValueType::Boolean => EncodedValue::Boolean((value_arg & 0x01) == 1),
-        _ => unimplemented!()
-//        _ => return nom::Err::Failure(nom::Context::Code(ErrorKind))
-        // TODO:return result on unknwon tye
+        EncodedValueType::Boolean => EncodedValue::Boolean((value_arg & 0x01) == 1)
     };
 
     Ok(((), value))
@@ -46,15 +43,15 @@ fn parse_value(value: &[u8], value_type: u8, e: nom::Endianness) -> Result<((), 
 
 #[derive(Debug)]
 pub struct EncodedAnnotationItem {
-    type_idx: u64,
+    pub type_idx: u64,
     size: u64,
-    elements: Vec<AnnotationElementItem>
+    pub elements: Vec<AnnotationElementItem>
 }
 
 #[derive(Debug)]
-struct AnnotationElementItem {
-    name_idx: u64,
-    value: EncodedValue
+pub struct AnnotationElementItem {
+    pub name_idx: u64,
+    pub value: EncodedValue
 }
 
 named_args!(pub parse_encoded_annotation_item(e: nom::Endianness) <&[u8], EncodedAnnotationItem>,
@@ -98,7 +95,7 @@ pub enum EncodedValue {
 }
 
 #[derive(Debug)]
-struct EncodedArrayItem {
+pub struct EncodedArrayItem {
 
 }
 
