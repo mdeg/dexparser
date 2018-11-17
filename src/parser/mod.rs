@@ -156,8 +156,7 @@ fn parse_class_defs<'a>(input: &'a[u8], tidi: &[Rc<TypeIdentifierDataItem>], sdi
     for class_def_item in class_def_items {
         let class_type = tidi[class_def_item.class_idx as usize].clone();
 
-        // TODO
-        let access_flags = vec!();
+        let access_flags = AccessFlag::parse(class_def_item.access_flags);
 
         let superclass = if class_def_item.superclass_idx == NO_INDEX {
             None
@@ -182,11 +181,7 @@ fn parse_class_defs<'a>(input: &'a[u8], tidi: &[Rc<TypeIdentifierDataItem>], sdi
             Some(sdi[class_def_item.source_file_idx as usize].clone())
         };
 
-//
-//            (ClassDefItem { class_idx, access_flags, superclass_idx, interfaces_off,
-//            source_file_idx, annotations_off, class_data_off, static_values_off})
         // AnnotationDirectoryItem contains an offset to the start of class_annotations
-
         let annotation_directory_data_item = if class_def_item.annotations_off == 0 {
             None
         } else {
@@ -515,34 +510,85 @@ enum AccessFlag {
     ACC_DECLARED_SYNCHRONIZED
 }
 
-// TODO
-//impl AccessFlag {
-//    fn parse(value: u32) -> Self {
-//        match value {
-//            0x1 => AccessFlag::ACC_PUBLIC,
-//            0x2 => AccessFlag::ACC_PRIVATE,
-//            0x4 => AccessFlag::ACC_PROTECTED,
-//            0x8 => AccessFlag::ACC_STATIC,
-//            0x10 => AccessFlag::ACC_FINAL,
-//            0x20 => AccessFlag::ACC_SYNCHRONIZED,
-//            0x40 => AccessFlag::ACC_VOLATILE,
-//            0x40 => AccessFlag::ACC_BRIDGE,
-//            0x80 => AccessFlag::ACC_TRANSIENT,
-//            0x80 => AccessFlag::ACC_VARARGS,
-//            0x100 => AccessFlag::ACC_NATIVE,
-//            0x200 => AccessFlag::ACC_INTERFACE,
-//            0x400 => AccessFlag::ACC_ABSTRACT,
-//            0x800 => AccessFlag::ACC_STRICT,
-//            0x1000 => AccessFlag::ACC_SYNTHETIC,
-//            0x2000 => AccessFlag::ACC_ANNOTATION,
-//            0x4000 => AccessFlag::ACC_ENUM,
-//            0x8000 => AccessFlag::UNUSED,
-//            0x10000 => AccessFlag::ACC_CONSTRUCTOR,
-//            0x20000 => AccessFlag::ACC_DECLARED_SYNCHRONIZED,
-//            _ => panic!("No type code found for access flag {}", value)
-//        }
-//    }
-//}
+// TODO: need to know if this is a class, field or method
+impl AccessFlag {
+    fn parse(value: u32) -> Vec<Self> {
+        let mut v = vec!();
+
+        // Break the integer into component bytes
+        let bytes = [
+            ((value >> 24) & 0xFF) as u8,
+            ((value >> 16) & 0xFF) as u8,
+            ((value >> 8) & 0xFF) as u8,
+            (value & 0xFF) as u8,
+        ];
+
+        let bits = bit_vec::BitVec::from_bytes(&bytes);
+        // First byte
+        if Some(true) == bits.get(0) {
+            v.push(AccessFlag::ACC_PUBLIC);
+        }
+        if Some(true) == bits.get(1) {
+            v.push(AccessFlag::ACC_PRIVATE);
+        }
+        if Some(true) == bits.get(2) {
+            v.push(AccessFlag::ACC_PROTECTED);
+        }
+        if Some(true) == bits.get(3) {
+            v.push(AccessFlag::ACC_STATIC);
+        }
+        if Some(true) == bits.get(4) {
+            v.push(AccessFlag::ACC_FINAL);
+        }
+        if Some(true) == bits.get(5) {
+            v.push(AccessFlag::ACC_SYNCHRONIZED);
+        }
+        if Some(true) == bits.get(6) {
+            // TODO: work these out
+            v.push(AccessFlag::ACC_VOLATILE);
+            v.push(AccessFlag::ACC_BRIDGE);
+        }
+        if Some(true) == bits.get(7) {
+            // TODO: work these out
+            v.push(AccessFlag::ACC_TRANSIENT);
+            v.push(AccessFlag::ACC_VARARGS);
+        }
+
+        // Second byte
+        if Some(true) == bits.get(8) {
+            v.push(AccessFlag::ACC_NATIVE);
+        }
+        if Some(true) == bits.get(9) {
+            v.push(AccessFlag::ACC_INTERFACE);
+        }
+        if Some(true) == bits.get(10) {
+            v.push(AccessFlag::ACC_ABSTRACT);
+        }
+        if Some(true) == bits.get(11) {
+            v.push(AccessFlag::ACC_STRICT);
+        }
+        if Some(true) == bits.get(12) {
+            v.push(AccessFlag::ACC_SYNTHETIC);
+        }
+        if Some(true) == bits.get(13) {
+            v.push(AccessFlag::ACC_ANNOTATION);
+        }
+        if Some(true) == bits.get(14) {
+            v.push(AccessFlag::ACC_ENUM);
+        }
+        if Some(true) == bits.get(15) {
+            v.push(AccessFlag::UNUSED);
+        }
+        if Some(true) == bits.get(16) {
+            v.push(AccessFlag::ACC_CONSTRUCTOR);
+        }
+        // Third byte
+        if Some(true) == bits.get(17) {
+            v.push(AccessFlag::ACC_DECLARED_SYNCHRONIZED);
+        }
+        v
+    }
+}
 
 named_args!(parse_map_list(e: nom::Endianness)<&[u8], MapList>,
     peek!(

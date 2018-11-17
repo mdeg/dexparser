@@ -7,3 +7,4 @@ edition = "2018"
 [dependencies]
 nom = "*"
 leb128 = "*"
+bit-vec = "*"

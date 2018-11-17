@@ -11,6 +11,7 @@ named_args!(pub parse_encoded_value_item(e: nom::Endianness)<&[u8], EncodedValue
 );
 
 // TODO: this is always little endian?
+// has to be, if the right shift will work...
 fn parse_value(value: &[u8], value_type: u8, e: nom::Endianness) -> Result<((), EncodedValue), nom::Err<&[u8]>> {
     // The high order 3 bits of the value type may contain useful size information or data
     let value_arg = value_type >> 5;
