@@ -1,3 +1,5 @@
+use super::parse_uleb128;
+
 named_args!(pub parse_encoded_value_item(e: nom::Endianness)<&[u8], EncodedValue>,
     peek!(
         do_parse!(
@@ -10,8 +12,8 @@ named_args!(pub parse_encoded_value_item(e: nom::Endianness)<&[u8], EncodedValue
 
 // TODO: this is always little endian?
 fn parse_value(value: &[u8], value_type: u8, e: nom::Endianness) -> Result<((), EncodedValue), nom::Err<&[u8]>> {
-    // The high order 3 bits of the value typemay contain useful size information or data
-    let value_arg = value_type & 0xE0;
+    // The high order 3 bits of the value type may contain useful size information or data
+    let value_arg = value_type >> 5;
 
     let value = match EncodedValueType::parse(value_arg & 0x1F) {
         EncodedValueType::Byte => EncodedValue::Byte(take!(value, 1)?.1[0]),
@@ -29,7 +31,7 @@ fn parse_value(value: &[u8], value_type: u8, e: nom::Endianness) -> Result<((), 
         EncodedValueType::Method => EncodedValue::Method(u32!(value, e)?.1),
         EncodedValueType::Enum => EncodedValue::Enum(u32!(value, e)?.1),
         EncodedValueType::Array => unimplemented!(),
-        EncodedValueType::Annotation => unimplemented!(),
+        EncodedValueType::Annotation => EncodedValue::Annotation(parse_encoded_annotation_item(value, e)?.1),
         EncodedValueType::Null => EncodedValue::Null,
         // The value for boolean types is the last bit of the value arg
         EncodedValueType::Boolean => EncodedValue::Boolean((value_arg & 0x01) == 1),
@@ -42,7 +44,7 @@ fn parse_value(value: &[u8], value_type: u8, e: nom::Endianness) -> Result<((), 
 }
 
 #[derive(Debug)]
-struct EncodedAnnotationItem {
+pub struct EncodedAnnotationItem {
     type_idx: u64,
     size: u64,
     elements: Vec<AnnotationElementItem>
@@ -54,8 +56,22 @@ struct AnnotationElementItem {
     value: EncodedValue
 }
 
-//            uleb_len: peek!(map!(take!(5), determine_uleb128_length))               >>
-//            utf16_size: map_res!(take!(uleb_len), read_uleb128)                     >>
+named_args!(pub parse_encoded_annotation_item(e: nom::Endianness) <&[u8], EncodedAnnotationItem>,
+    do_parse!(
+        type_idx: call!(parse_uleb128, e) >>
+        size: call!(parse_uleb128, e) >>
+        elements: count!(call!(parse_annotation_element_item, e), size as usize) >>
+        (EncodedAnnotationItem { type_idx, size, elements })
+    )
+);
+
+named_args!(parse_annotation_element_item(e: nom::Endianness)<&[u8], AnnotationElementItem>,
+    do_parse!(
+        name_idx: call!(parse_uleb128, e)   >>
+        value: call!(parse_encoded_value_item, e)   >>
+        (AnnotationElementItem { name_idx, value })
+    )
+);
 
 // parse value type, then get length and parse value based on that
 #[derive(Debug)]

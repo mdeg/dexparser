@@ -214,17 +214,13 @@ fn parse_class_defs<'a>(input: &'a[u8], tidi: &[Rc<TypeIdentifierDataItem>], sdi
                     // The annotations are in the format encoded_annotaiton_item
 
                     let (_, annotation) = parse_annotation_item(&data[annotation_offset as usize - data_offset..], e)?;
-                    println!("annotation: {:?}", annotation);
+                    println!("Annotation: {:#?}", annotation);
                 }
-
             };
-
-            //1011 1110 - should actually be 1E
 
             //TODO
             Some(AnnotationsDirectoryDataItem {})
         };
-
 
         v.push(ClassDefDataItem { class_type, access_flags, superclass, interfaces, source_file_name, });
     }
@@ -240,7 +236,7 @@ struct AnnotationsDirectoryDataItem {
 named_args!(parse_annotation_item(e: nom::Endianness)<&[u8], AnnotationItem>,
     peek!(do_parse!(
         visibility: map!(take!(1), |x| { Visibility::parse(x[0]) })  >>
-        annotation: apply!(encoded_value::parse_encoded_value_item, e)    >>
+        annotation: apply!(encoded_value::parse_encoded_annotation_item, e)    >>
         (AnnotationItem { visibility, annotation })
 )));
 
@@ -248,7 +244,7 @@ named_args!(parse_annotation_item(e: nom::Endianness)<&[u8], AnnotationItem>,
 #[derive(Debug)]
 struct AnnotationItem {
     visibility: Visibility,
-    annotation: encoded_value::EncodedValue
+    annotation: encoded_value::EncodedAnnotationItem
 }
 
 #[derive(Debug)]
@@ -264,6 +260,7 @@ impl Visibility {
             0x00 => Visibility::BUILD,
             0x01 => Visibility::RUNTIME,
             0x02 => Visibility::SYSTEM,
+            // TODO: return result
             _ => panic!("Could not find visibility for value 0x{:0X}", value)
         }
     }
@@ -384,9 +381,11 @@ struct TypeIdentifierDataItem {
 }
 
 // Length of uleb128 value is determined by the
-fn determine_uleb128_length(input: &[u8]) -> usize {
-    // TODO: work out what this is actually doing
-    input.iter().take_while(|byte| *byte & (0 << 0) != 0).count() + 1
+pub fn determine_uleb128_length(input: &[u8]) -> usize {
+    input.iter()
+        .take_while(|byte| (*byte & 0x80) != 0)
+        .count()
+        + 1
 }
 
 named!(parse_string_data_item <&[u8], StringDataItem> ,
@@ -403,11 +402,20 @@ named!(parse_string_data_item <&[u8], StringDataItem> ,
     ))
 );
 
+named_args!(parse_uleb128(e: nom::Endianness)<&[u8], u64>,
+    do_parse!(
+        len: peek!(map!(take!(5), determine_uleb128_length))    >>
+        value: map_res!(take!(len), read_uleb128)          >>
+        (value)
+    )
+);
+
 // nom gives us immutable byte slices, but the leb128 library requires mutable slices
 // No syntactically valid way to convert the two inside the macro so we'll make a wrapper function
 fn read_uleb128(input: &[u8]) -> Result<u64, leb128::read::Error> {
     leb128::read::unsigned(&mut (input.clone()))
 }
+
 
 #[derive(Debug)]
 struct StringDataItem {
