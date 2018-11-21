@@ -1,4 +1,5 @@
 use super::parse_uleb128;
+use byteorder::ByteOrder;
 
 named_args!(pub parse_encoded_value_item(e: nom::Endianness)<&[u8], EncodedValue>,
     peek!(
@@ -22,8 +23,8 @@ fn parse_value(value: &[u8], value_type: u8, e: nom::Endianness) -> Result<((), 
         EncodedValueType::Char => EncodedValue::Char(u16!(value, e)?.1),
         EncodedValueType::Int => EncodedValue::Int(i32!(value, e)?.1),
         EncodedValueType::Long => EncodedValue::Long(i64!(value, e)?.1),
-        EncodedValueType::Float => unimplemented!(),
-        EncodedValueType::Double => unimplemented!(),
+        EncodedValueType::Float => EncodedValue::Float(byteorder::LittleEndian::read_f32(&take!(value, 4)?.1)),
+        EncodedValueType::Double => EncodedValue::Double(byteorder::LittleEndian::read_f64(&take!(value, 4)?.1)),
         EncodedValueType::MethodType => EncodedValue::MethodType(u32!(value, e)?.1),
         EncodedValueType::MethodHandle => EncodedValue::MethodHandle(u32!(value, e)?.1),
         EncodedValueType::String => EncodedValue::String(u32!(value, e)?.1),
@@ -31,7 +32,7 @@ fn parse_value(value: &[u8], value_type: u8, e: nom::Endianness) -> Result<((), 
         EncodedValueType::Field => EncodedValue::Field(u32!(value, e)?.1),
         EncodedValueType::Method => EncodedValue::Method(u32!(value, e)?.1),
         EncodedValueType::Enum => EncodedValue::Enum(u32!(value, e)?.1),
-        EncodedValueType::Array => unimplemented!(),
+        EncodedValueType::Array => EncodedValue::Array(parse_encoded_array_item(value, e)?.1),
         EncodedValueType::Annotation => EncodedValue::Annotation(parse_encoded_annotation_item(value, e)?.1),
         EncodedValueType::Null => EncodedValue::Null,
         // The value for boolean types is the last bit of the value arg
@@ -94,11 +95,19 @@ pub enum EncodedValue {
     Boolean(bool)
 }
 
+named_args!(parse_encoded_array_item(e: nom::Endianness)<&[u8], EncodedArrayItem>,
+    do_parse!(
+        size: call!(parse_uleb128, e)   >>
+        values: count!(call!(parse_encoded_value_item, e), size as usize)  >>
+        (EncodedArrayItem { size, values })
+    )
+);
+
 #[derive(Debug)]
 pub struct EncodedArrayItem {
-
+    size: u64,
+    values: Vec<EncodedValue>
 }
-
 
 #[derive(Debug)]
 enum EncodedValueType {

@@ -4,6 +4,7 @@
 #[macro_use] extern crate nom;
 extern crate leb128;
 extern crate bit_vec;
+extern crate byteorder;
 
 mod parser;
 
