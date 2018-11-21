@@ -58,9 +58,6 @@ pub fn parse(buffer: &[u8]) -> Result<DexFile, ParserErr> {
 
     // Peek ahead to determine endianness
     let endianness = {
-        // TODO: remove this
-        println!("{:X?}", &buffer[40 .. 44]);
-
         if buffer[40 .. 44] == ENDIAN_CONSTANT {
             nom::Endianness::Big
         } else if buffer[40 .. 44] == REVERSE_ENDIAN_CONSTANT {
@@ -69,8 +66,6 @@ pub fn parse(buffer: &[u8]) -> Result<DexFile, ParserErr> {
             return Err(ParserErr);
         }
     };
-
-    println!("Endianness is {:?}", endianness);
 
     // TODO: proper error
 //    parse_dex_file(buffer, endianness)
@@ -150,6 +145,13 @@ struct ClassDefDataItem {
     class_data: Option<ClassData>
 }
 
+#[derive(Debug, PartialEq)]
+enum AnnotationType {
+    Class,
+    Field,
+    Method
+}
+
 fn parse_class_defs<'a>(input: &'a[u8], tidi: &[Rc<TypeIdentifierDataItem>], sdi: &[Rc<StringDataItem>],
                         fdi: &[Rc<FieldDataItem>], data: &'a[u8], data_offset: usize, size: usize, e: nom::Endianness)
                         -> Result<(&'a[u8], Vec<ClassDefDataItem>), nom::Err<&'a[u8]>> {
@@ -158,7 +160,7 @@ fn parse_class_defs<'a>(input: &'a[u8], tidi: &[Rc<TypeIdentifierDataItem>], sdi
     for class_def_item in class_def_items {
         let class_type = tidi[class_def_item.class_idx as usize].clone();
 
-        let access_flags = AccessFlag::parse(class_def_item.access_flags);
+        let access_flags = AccessFlag::parse(class_def_item.access_flags, AnnotationType::Class);
 
         let superclass = if class_def_item.superclass_idx == NO_INDEX {
             None
@@ -189,16 +191,6 @@ fn parse_class_defs<'a>(input: &'a[u8], tidi: &[Rc<TypeIdentifierDataItem>], sdi
         } else {
             let adi_offset = class_def_item.annotations_off as usize - data_offset;
             let (_, adi) = parse_annotations_directory_item(&data[adi_offset..], e)?;
-            // annotations_directory_item
-
-            // annotation_set_item contains a size and a list of annotation_off_items
-            // annotation_off_items are each an offset to an annotation_itemlet (input, value) =
-            // annotation_item contains a visibility and an annotation
-            // an annotation is in the format EncodedAnnotationItem
-
-            // class_annotations_off points to an annotation_set_item
-            // which contains a size, and a list of entries, which is a vec of offsets to annotation_set_item's
-
             let class_annotations = if adi.class_annotations_off == 0 {
                 None
             } else {
@@ -657,7 +649,7 @@ enum AccessFlag {
 
 // TODO: need to know if this is a class, field or method
 impl AccessFlag {
-    fn parse(value: u32) -> Vec<Self> {
+    fn parse(value: u32, type_: AnnotationType) -> Vec<Self> {
         let mut v = vec!();
 
         // Break the integer into component bytes
@@ -689,14 +681,18 @@ impl AccessFlag {
             v.push(AccessFlag::ACC_SYNCHRONIZED);
         }
         if Some(true) == bits.get(6) {
-            // TODO: work these out
-            v.push(AccessFlag::ACC_VOLATILE);
-            v.push(AccessFlag::ACC_BRIDGE);
+            if type_ == AnnotationType::Field {
+                v.push(AccessFlag::ACC_VOLATILE);
+            } else if type_ == AnnotationType::Method {
+                v.push(AccessFlag::ACC_BRIDGE);
+            }
         }
         if Some(true) == bits.get(7) {
-            // TODO: work these out
-            v.push(AccessFlag::ACC_TRANSIENT);
-            v.push(AccessFlag::ACC_VARARGS);
+            if type_ == AnnotationType::Field {
+                v.push(AccessFlag::ACC_TRANSIENT);
+            } else if type_ == AnnotationType::Method {
+                v.push(AccessFlag::ACC_VARARGS);
+            }
         }
 
         // Second byte
@@ -731,6 +727,9 @@ impl AccessFlag {
         if Some(true) == bits.get(17) {
             v.push(AccessFlag::ACC_DECLARED_SYNCHRONIZED);
         }
+
+        // TODO: some kind of assert here
+
         v
     }
 }
