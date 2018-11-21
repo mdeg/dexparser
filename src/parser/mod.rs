@@ -145,7 +145,9 @@ struct ClassDefDataItem {
     access_flags: Vec<AccessFlag>,
     superclass: Option<Rc<TypeIdentifierDataItem>>,
     interfaces: Option<Vec<Rc<TypeIdentifierDataItem>>>,
-    source_file_name: Option<Rc<StringDataItem>>
+    source_file_name: Option<Rc<StringDataItem>>,
+    annotations: Option<Annotations>,
+    class_data: Option<ClassData>
 }
 
 fn parse_class_defs<'a>(input: &'a[u8], tidi: &[Rc<TypeIdentifierDataItem>], sdi: &[Rc<StringDataItem>],
@@ -181,64 +183,182 @@ fn parse_class_defs<'a>(input: &'a[u8], tidi: &[Rc<TypeIdentifierDataItem>], sdi
             Some(sdi[class_def_item.source_file_idx as usize].clone())
         };
 
-        // AnnotationDirectoryItem contains an offset to the start of class_annotations
-        let annotation_directory_data_item = if class_def_item.annotations_off == 0 {
+        // class_def_item contains an offset to the start of the annotations structure
+        let annotations = if class_def_item.annotations_off == 0 {
             None
         } else {
             let adi_offset = class_def_item.annotations_off as usize - data_offset;
             let (_, adi) = parse_annotations_directory_item(&data[adi_offset..], e)?;
+            // annotations_directory_item
 
             // annotation_set_item contains a size and a list of annotation_off_items
             // annotation_off_items are each an offset to an annotation_itemlet (input, value) =
             // annotation_item contains a visibility and an annotation
             // an annotation is in the format EncodedAnnotationItem
 
-//        let mut class_annotations = vec!();
             // class_annotations_off points to an annotation_set_item
             // which contains a size, and a list of entries, which is a vec of offsets to annotation_set_item's
 
-
-            if adi.class_annotations_off != 0 {
-
+            let class_annotations = if adi.class_annotations_off == 0 {
+                None
+            } else {
                 let (_, set_item) = parse_annotation_set_item(
                     &data[adi.class_annotations_off as usize - data_offset..], e)?;
 
-                // Each entry here is an offset to an annotation_item
+                let mut class_annotations = vec!();
+                // Each entry here is an offset to an annotation_item in the data pool
                 for annotation_offset in set_item.entries {
-                    // Every annotation item contains a visibility and an annotation
-                    // The annotations are in the format encoded_annotaiton_item
-
+                    // Every annotation item contains a visibility, a type and an annotation
                     let (_, annotation_item) = parse_annotation_item(&data[annotation_offset as usize - data_offset..], e)?;
 
-                    let annotation = Annotation {
-                            visibility: annotation_item.visibility,
-                            type_: tidi[annotation_item.annotation.type_idx as usize].clone(),
-                            elements: annotation_item.annotation.elements.into_iter().map(|item| {
-                                AnnotationElement {
-                                    name: sdi[item.name_idx as usize].clone(),
-                                    value: item.value
-                                }
-                            }).collect()
-                    };
-
-                    println!("Annotation: {:#?}", annotation);
-                    
+                    class_annotations.push(ClassAnnotation {
+                        visibility: annotation_item.visibility,
+                        type_: tidi[annotation_item.annotation.type_idx as usize].clone(),
+                        elements: annotation_item.annotation.elements.into_iter().map(|item| {
+                            AnnotationElement {
+                                name: sdi[item.name_idx as usize].clone(),
+                                value: item.value
+                            }
+                        }).collect()
+                    });
                 }
+
+                Some(class_annotations)
             };
 
+            let field_annotations = match adi.fld_annot {
+                Some(raw_field_annotations) => {
+                    let mut fa = vec!();
+                    // convert raw field annotations to sensible ones
+                    for rfa in raw_field_annotations {
+                        let field_data = fdi[rfa.field_idx as usize].clone();
+
+                        let (_, asi) = parse_annotation_set_item(&data[rfa.annotations_offset as usize - data_offset..], e)?;
+
+                        let mut annotations = vec!();
+                        for annot_offset in asi.entries {
+                            let (_, ai) = parse_annotation_item(&data[annot_offset as usize - data_offset..], e)?;
+                            annotations.push(ai);
+                        }
+
+                        fa.push(FieldAnnotation {
+                            field_data,
+                            annotations
+                        })
+                    }
+                    Some(fa)
+                },
+                None => None
+            } ;
+
+
+            // todo: method, parameter annotations
+
+
             //TODO
-            Some(AnnotationsDirectoryDataItem {})
+            Some(Annotations {
+                class_annotations,
+                field_annotations
+            })
         };
 
-        v.push(ClassDefDataItem { class_type, access_flags, superclass, interfaces, source_file_name, });
+        let class_data = None;
+//        if adi.class_data_off = 0 {
+//            let (_, class_data) = parse_class_data_item(&data[- data_offset]);
+//        }
+
+        v.push(ClassDefDataItem {
+            class_type, access_flags, superclass,
+            interfaces, source_file_name, annotations,
+            class_data });
     }
 
     Ok((buffer, v))
 }
 
-struct AnnotationsDirectoryDataItem {
+#[derive(Debug)]
+struct AnnotationOffsetItem {
 
 }
+
+#[derive(Debug)]
+struct FieldAnnotation {
+    field_data: Rc<FieldDataItem>,
+    annotations: Vec<AnnotationItem>
+}
+
+//field_annotations 	field_annotation[fields_size] (optional) 	list of associated field annotations. The elements of the list must be sorted in increasing order, by field_idx.
+//method_annotations 	method_annotation[methods_size] (optional) 	list of associated method annotations. The elements of the list must be sorted in increasing order, by method_idx.
+//parameter_annotations 	parameter_annotation[parameters_size] (optional) 	list of associated method parameter annotations. The elements of the list must be sorted in increasing order, by method_idx.
+
+
+
+#[derive(Debug)]
+struct Annotations {
+    class_annotations: Option<Vec<ClassAnnotation>>,
+    field_annotations: Option<Vec<FieldAnnotation>>
+}
+
+#[derive(Debug)]
+struct ClassData {
+    static_fields: Vec<EncodedField>,
+    instance_fields: Vec<EncodedField>,
+    direct_methods: Vec<EncodedMethod>,
+    virtual_methods: Vec<EncodedMethod>
+}
+
+//static_fields_size 	uleb128 	the number of static fields defined in this item
+//instance_fields_size 	uleb128 	the number of instance fields defined in this item
+//direct_methods_size 	uleb128 	the number of direct methods defined in this item
+//virtual_methods_size 	uleb128 	the number of virtual methods defined in this item
+//static_fields 	encoded_field[static_fields_size] 	the defined static fields, represented as a sequence of encoded elements. The fields must be sorted by field_idx in increasing order.
+//instance_fields 	encoded_field[instance_fields_size] 	the defined instance fields, represented as a sequence of encoded elements. The fields must be sorted by field_idx in increasing order.
+//direct_methods 	encoded_method[direct_methods_size] 	the defined direct (any of static, private, or constructor) methods, represented as a sequence of encoded elements. The methods must be sorted by method_idx in increasing order.
+//virtual_methods 	encoded_method[virtual_methods_size] 	the defined virtual (none of static, private, or constructor) methods, represented as a sequence of encoded elements. This list should not include inherited methods unless overridden by the class that this item represents. The methods must be sorted by method_idx in increasing order. The method_idx of a virtual method must not be the same as any direct method.
+
+#[derive(Debug)]
+struct RawClassDataItem {
+    static_fields_size: u64,
+    instance_fields_size: u64,
+    direct_methods_size: u64,
+    virtual_methods_size: u64,
+    static_fields: Vec<RawEncodedField>,
+    instance_fields: Vec<RawEncodedField>,
+    direct_methods: Vec<RawEncodedMethod>,
+    virtual_methods: Vec<RawEncodedMethod>
+}
+
+
+#[derive(Debug)]
+struct EncodedField {
+
+}
+
+#[derive(Debug)]
+struct EncodedMethod {
+
+}
+
+//field_idx_diff 	uleb128 	index into the field_ids list for the identity of this field (includes the name and descriptor), represented as a difference from the index of previous element in the list. The index of the first element in a list is represented directly.
+//access_flags 	uleb128 	access flags for the field (public, final, etc.). See "access_flags Definitions" for details.
+
+#[derive(Debug)]
+struct RawEncodedField {
+    field_idx_diff: u64,
+    access_flags: u64
+}
+
+#[derive(Debug)]
+struct RawEncodedMethod {
+    method_idx_diff: u64,
+    access_flags: u64,
+    code_off: u64
+}
+
+//method_idx_diff 	uleb128 	index into the method_ids list for the identity of this method (includes the name and descriptor), represented as a difference from the index of previous element in the list. The index of the first element in a list is represented directly.
+//access_flags 	uleb128 	access flags for the method (public, final, etc.). See "access_flags Definitions" for details.
+//code_off 	uleb128 	offset from the start of the file to the code structure for this method, or 0 if this method is either abstract or native. The offset should be to a location in the data section. The format of the data is specified by "code_item" below.
+
 
 
 named_args!(parse_annotation_item(e: nom::Endianness)<&[u8], AnnotationItem>,
@@ -249,7 +369,7 @@ named_args!(parse_annotation_item(e: nom::Endianness)<&[u8], AnnotationItem>,
 )));
 
 #[derive(Debug)]
-struct Annotation {
+struct ClassAnnotation {
     visibility: Visibility,
     type_: Rc<TypeIdentifierDataItem>,
     elements: Vec<AnnotationElement>
@@ -771,66 +891,65 @@ named_args!(parse_header(e: nom::Endianness)<&[u8], Header>,
 named_args!(parse_annotations_directory_item(e:nom::Endianness)<&[u8], AnnotationsDirectoryItem>,
     peek!(do_parse!(
         class_annotations_off: u32!(e)                                                          >>
-        fields_size: u32!(e)                                                                    >>
-        annotated_methods_size: u32!(e)                                                         >>
-        annotated_parameters_size: u32!(e)                                                      >>
-        field_annotations: count!(apply!(parse_field_annotation_item, e), fields_size as usize) >>
-        method_annotations: count!(apply!(parse_method_annotation_item, e), annotated_methods_size as usize) >>
-        parameter_annotations: count!(apply!(parse_parameter_annotation_item, e), annotated_parameters_size as usize) >>
-        (AnnotationsDirectoryItem { class_annotations_off, fields_size, annotated_methods_size,
-        annotated_parameters_size, field_annotations, method_annotations, parameter_annotations })
+        fld_size: u32!(e)                                                                    >>
+        mtd_size: u32!(e)                                                         >>
+        prm_size: u32!(e)                                                      >>
+        fld_annot: cond!(fld_size > 0, count!(apply!(parse_field_annotation_item, e), fld_size as usize)) >>
+        mtd_annot: cond!(mtd_size > 0, count!(apply!(parse_method_annotation_item, e), mtd_size as usize)) >>
+        prm_annot: cond!(prm_size > 0, count!(apply!(parse_parameter_annotation_item, e), prm_size as usize)) >>
+        (AnnotationsDirectoryItem { class_annotations_off, fld_annot, mtd_annot, prm_annot })
     ))
 );
 
-named_args!(parse_field_annotation_item(e: nom::Endianness)<&[u8], FieldAnnotationItem>,
+//Docs: field_annotation_item
+named_args!(parse_field_annotation_item(e: nom::Endianness)<&[u8], RawFieldAnnotation>,
     do_parse!(
         field_idx: u32!(e) >>
         annotations_offset: u32!(e) >>
-        (FieldAnnotationItem { field_idx, annotations_offset })
+        (RawFieldAnnotation { field_idx, annotations_offset })
     )
 );
 
-named_args!(parse_method_annotation_item(e: nom::Endianness)<&[u8], MethodAnnotationItem>,
+//Docs: method_annotation_item
+named_args!(parse_method_annotation_item(e: nom::Endianness)<&[u8], RawMethodAnnotation>,
     do_parse!(
         method_idx: u32!(e) >>
         annotations_offset: u32!(e) >>
-        (MethodAnnotationItem { method_idx, annotations_offset })
+        (RawMethodAnnotation { method_idx, annotations_offset })
     )
 );
 
-named_args!(parse_parameter_annotation_item(e: nom::Endianness)<&[u8], ParameterAnnotationItem>,
+//Docs: parameter_annotation_item
+named_args!(parse_parameter_annotation_item(e: nom::Endianness)<&[u8], RawParameterAnnotation>,
     do_parse!(
         method_idx: u32!(e) >>
         annotations_offset: u32!(e) >>
-        (ParameterAnnotationItem { method_idx, annotations_offset })
+        (RawParameterAnnotation { method_idx, annotations_offset })
     )
 );
 
 #[derive(Debug)]
 struct AnnotationsDirectoryItem {
     class_annotations_off: u32,
-    fields_size: u32,
-    annotated_methods_size: u32,
-    annotated_parameters_size: u32,
-    field_annotations: Vec<FieldAnnotationItem>,
-    method_annotations: Vec<MethodAnnotationItem>,
-    parameter_annotations: Vec<ParameterAnnotationItem>
+    fld_annot: Option<Vec<RawFieldAnnotation>>,
+    mtd_annot: Option<Vec<RawMethodAnnotation>>,
+    prm_annot: Option<Vec<RawParameterAnnotation>>
 }
 
 #[derive(Debug)]
-struct FieldAnnotationItem {
+struct RawFieldAnnotation {
     field_idx: u32,
     annotations_offset: u32
 }
 
 #[derive(Debug)]
-struct MethodAnnotationItem {
+struct RawMethodAnnotation {
     method_idx: u32,
     annotations_offset: u32
 }
 
 #[derive(Debug)]
-struct ParameterAnnotationItem {
+struct RawParameterAnnotation {
     method_idx: u32,
     annotations_offset: u32
 }
@@ -845,8 +964,10 @@ named_args!(parse_annotation_set_item(e: nom::Endianness)<&[u8], AnnotationSetIt
     peek!(
         do_parse!(
             size: u32!(e)                               >>
-            entries: count!(u32!(e), size as usize)     >>
+            entries: count!(call!(parse_annotation_offset_item, e), size as usize)     >>
             (AnnotationSetItem { size, entries })
         )
     )
 );
+
+named_args!(parse_annotation_offset_item(e: nom::Endianness)<&[u8], u32>, u32!(e));
