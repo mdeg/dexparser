@@ -1,5 +1,7 @@
 mod encoded_value;
+mod error;
 
+use self::error::*;
 use nom::*;
 use std::str;
 use std::rc::Rc;
@@ -51,8 +53,6 @@ pub struct Header<'a> {
     pub data_off: u32
 }
 
-#[derive(Debug)]
-pub struct ParserErr;
 
 pub fn parse(buffer: &[u8]) -> Result<DexFile, ParserErr> {
 
@@ -83,23 +83,6 @@ pub fn parse(buffer: &[u8]) -> Result<DexFile, ParserErr> {
         }
     }
 }
-
-impl From<nom::Err<&[u8]>> for ParserErr {
-    fn from(e: nom::Err<&[u8]>) -> Self {
-        // TODO
-        println!("error! {:?}", e);
-        ParserErr
-    }
-}
-
-impl From<&'static str> for ParserErr {
-    fn from(e: &'static str) -> Self {
-        // TODO
-        println!("error! {:?}", e);
-        ParserErr
-    }
-}
-
 
 fn parse_dex_file(buffer: &[u8], e: nom::Endianness) -> Result<DexFile, ParserErr> {
     let (buffer, header) = parse_header(buffer, e)?;
@@ -406,20 +389,10 @@ impl Visibility {
             0x00 => Ok(Visibility::BUILD),
             0x01 => Ok(Visibility::RUNTIME),
             0x02 => Ok(Visibility::SYSTEM),
-            _ => Err(ParserErr::from("Could not find visibility for value 0x{:0X}"))
+            _ => Err(ParserErr::from(format!("Could not find visibility for value 0x{:0X}", value)))
         }
     }
 }
-
-// TODO: convert to annotationelementdataitem
-struct AnnotationElementItem {
-    name_idx: u64,
-    value: encoded_value::EncodedValue
-}
-//
-//struct AnnotationsDirectoryDataItem {
-//    class_annotations: Vec<AnnotationSetDataItem>
-//}
 
 fn parse_prototype_data<'a>(input: &'a[u8], data: &'a[u8], sdi: &[Rc<StringDataItem>], tidi: &[Rc<TypeIdentifierDataItem>],
                             size: usize, data_offset: usize, e: nom::Endianness) -> Result<(&'a[u8], Vec<Rc<PrototypeDataItem>>), nom::Err<&'a[u8]>> {
@@ -608,29 +581,29 @@ enum MapListItemType {
 }
 
 impl MapListItemType {
-    fn parse(value: u16) -> Self {
+    fn parse(value: u16) -> Result<Self, ParserErr> {
         match value {
-            0x0000 => MapListItemType::HeaderItem,
-            0x0001 => MapListItemType::StringIdItem,
-            0x0002 => MapListItemType::TypeIdItem,
-            0x0003 => MapListItemType::ProtoIdItem,
-            0x0004 => MapListItemType::FieldIdItem,
-            0x0005 => MapListItemType::MethodIdItem,
-            0x0006 => MapListItemType::ClassDefItem,
-            0x0007 => MapListItemType::CallSiteIdItem,
-            0x0008 => MapListItemType::MethodHandleItem,
-            0x1000 => MapListItemType::MapList,
-            0x1001 => MapListItemType::TypeList,
-            0x1002 => MapListItemType::AnnotationSetRefList,
-            0x1003 => MapListItemType::AnnotationSetItem,
-            0x2000 => MapListItemType::ClassDataItem,
-            0x2001 => MapListItemType::CodeItem,
-            0x2002 => MapListItemType::StringDataItem,
-            0x2003 => MapListItemType::DebugInfoItem,
-            0x2004 => MapListItemType::AnnotationItem,
-            0x2005 => MapListItemType::EncodedArrayItem,
-            0x2006 => MapListItemType::AnnotationsDirectoryItem,
-            _ => panic!("No type code found for map list item {}", value)
+            0x0000 => Ok(MapListItemType::HeaderItem),
+            0x0001 => Ok(MapListItemType::StringIdItem),
+            0x0002 => Ok(MapListItemType::TypeIdItem),
+            0x0003 => Ok(MapListItemType::ProtoIdItem),
+            0x0004 => Ok(MapListItemType::FieldIdItem),
+            0x0005 => Ok(MapListItemType::MethodIdItem),
+            0x0006 => Ok(MapListItemType::ClassDefItem),
+            0x0007 => Ok(MapListItemType::CallSiteIdItem),
+            0x0008 => Ok(MapListItemType::MethodHandleItem),
+            0x1000 => Ok(MapListItemType::MapList),
+            0x1001 => Ok(MapListItemType::TypeList),
+            0x1002 => Ok(MapListItemType::AnnotationSetRefList),
+            0x1003 => Ok(MapListItemType::AnnotationSetItem),
+            0x2000 => Ok(MapListItemType::ClassDataItem),
+            0x2001 => Ok(MapListItemType::CodeItem),
+            0x2002 => Ok(MapListItemType::StringDataItem),
+            0x2003 => Ok(MapListItemType::DebugInfoItem),
+            0x2004 => Ok(MapListItemType::AnnotationItem),
+            0x2005 => Ok(MapListItemType::EncodedArrayItem),
+            0x2006 => Ok(MapListItemType::AnnotationsDirectoryItem),
+            _ => Err(ParserErr::from(format!("No type code found for map list item 0x{:0X}", value)))
         }
     }
 }
@@ -752,7 +725,7 @@ named_args!(parse_map_list(e: nom::Endianness)<&[u8], MapList>,
         do_parse!(
             size: u32!(e)                                           >>
             list: count!(do_parse!(
-                    type_: map!(u16!(e), MapListItemType::parse)    >>
+                    type_: map_res!(u16!(e), MapListItemType::parse)    >>
                     unused: u16!(e)                                 >>
                     size: u32!(e)                                   >>
                     offset: u32!(e)                                 >>

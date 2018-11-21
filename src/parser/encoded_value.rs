@@ -1,10 +1,11 @@
-use super::parse_uleb128;
+use super::{parse_uleb128, take_one};
+use super::error::*;
 use byteorder::ByteOrder;
 
 named!(pub parse_encoded_value_item<&[u8], EncodedValue>,
     peek!(
         do_parse!(
-            value_type: map!(take!(1), |x| {x[0]}) >>
+            value_type: call!(take_one) >>
             value: call!(parse_value, value_type) >>
             (value)
         )
@@ -15,7 +16,7 @@ fn parse_value(value: &[u8], value_type: u8) -> Result<((), EncodedValue), nom::
     // The high order 3 bits of the value type may contain useful size information or data
     let value_arg = value_type >> 5;
 
-    let value = match EncodedValueType::parse(value_arg & 0x1F) {
+    let value = match EncodedValueType::parse(value_arg & 0x1F)? {
         EncodedValueType::Byte => EncodedValue::Byte(take!(value, 1)?.1[0]),
         EncodedValueType::Short => EncodedValue::Short(nom::le_i16(value)?.1),
         EncodedValueType::Char => EncodedValue::Char(nom::le_u16(value)?.1),
@@ -130,28 +131,27 @@ enum EncodedValueType {
 }
 
 impl EncodedValueType {
-    fn parse(value: u8) -> Self {
+    fn parse(value: u8) -> Result<Self, ParserErr> {
         match value {
-            0x00 => EncodedValueType::Byte,
-            0x02 => EncodedValueType::Short,
-            0x03 => EncodedValueType::Char,
-            0x04 => EncodedValueType::Int,
-            0x06 => EncodedValueType::Long,
-            0x10 => EncodedValueType::Float,
-            0x11 => EncodedValueType::Double,
-            0x15 => EncodedValueType::MethodType,
-            0x16 => EncodedValueType::MethodHandle,
-            0x17 => EncodedValueType::String,
-            0x18 => EncodedValueType::Type,
-            0x19 => EncodedValueType::Field,
-            0x1A => EncodedValueType::Method,
-            0x1B => EncodedValueType::Enum,
-            0x1C => EncodedValueType::Array,
-            0x1D => EncodedValueType::Annotation,
-            0x1E => EncodedValueType::Null,
-            0x1F => EncodedValueType::Boolean,
-            // TODO: return result
-            _ => panic!("Could not find encoded value type 0x{:02X}", value)
+            0x00 => Ok(EncodedValueType::Byte),
+            0x02 => Ok(EncodedValueType::Short),
+            0x03 => Ok(EncodedValueType::Char),
+            0x04 => Ok(EncodedValueType::Int),
+            0x06 => Ok(EncodedValueType::Long),
+            0x10 => Ok(EncodedValueType::Float),
+            0x11 => Ok(EncodedValueType::Double),
+            0x15 => Ok(EncodedValueType::MethodType),
+            0x16 => Ok(EncodedValueType::MethodHandle),
+            0x17 => Ok(EncodedValueType::String),
+            0x18 => Ok(EncodedValueType::Type),
+            0x19 => Ok(EncodedValueType::Field),
+            0x1A => Ok(EncodedValueType::Method),
+            0x1B => Ok(EncodedValueType::Enum),
+            0x1C => Ok(EncodedValueType::Array),
+            0x1D => Ok(EncodedValueType::Annotation),
+            0x1E => Ok(EncodedValueType::Null),
+            0x1F => Ok(EncodedValueType::Boolean),
+            _ => Err(ParserErr::from(format!("Could not find encoded value type for 0x{:0X}", value)))
         }
     }
 }
