@@ -86,6 +86,15 @@ pub fn parse(buffer: &[u8]) -> Result<DexFile, ParserErr> {
 
 impl From<nom::Err<&[u8]>> for ParserErr {
     fn from(e: nom::Err<&[u8]>) -> Self {
+        // TODO
+        println!("error! {:?}", e);
+        ParserErr
+    }
+}
+
+impl From<&'static str> for ParserErr {
+    fn from(e: &'static str) -> Self {
+        // TODO
         println!("error! {:?}", e);
         ParserErr
     }
@@ -354,11 +363,16 @@ struct RawEncodedMethod {
 
 
 named!(parse_annotation_item<&[u8], AnnotationItem>,
-    peek!(do_parse!(
-        visibility: map!(take!(1), |x| { Visibility::parse(x[0]) })  >>
-        annotation: call!(encoded_value::parse_encoded_annotation_item)    >>
-        (AnnotationItem { visibility, annotation })
-)));
+    peek!(
+        do_parse!(
+            visibility: map_res!(call!(take_one), Visibility::parse)    >>
+            annotation: call!(encoded_value::parse_encoded_annotation_item)    >>
+            (AnnotationItem { visibility, annotation })
+        )
+    )
+);
+
+named!(take_one<&[u8], u8>, map!(take!(1), |x| { x[0] }));
 
 #[derive(Debug)]
 struct ClassAnnotation {
@@ -387,13 +401,12 @@ enum Visibility {
 }
 
 impl Visibility {
-    fn parse(value: u8) -> Self {
+    fn parse(value: u8) -> Result<Self, ParserErr> {
         match value {
-            0x00 => Visibility::BUILD,
-            0x01 => Visibility::RUNTIME,
-            0x02 => Visibility::SYSTEM,
-            // TODO: return result
-            _ => panic!("Could not find visibility for value 0x{:0X}", value)
+            0x00 => Ok(Visibility::BUILD),
+            0x01 => Ok(Visibility::RUNTIME),
+            0x02 => Ok(Visibility::SYSTEM),
+            _ => Err(ParserErr::from("Could not find visibility for value 0x{:0X}"))
         }
     }
 }
