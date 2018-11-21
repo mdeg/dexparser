@@ -1,6 +1,10 @@
 mod encoded_value;
 mod error;
+mod result_types;
+mod raw_types;
 
+use self::result_types::*;
+use self::raw_types::*;
 use self::error::*;
 use nom::*;
 use std::str;
@@ -14,17 +18,6 @@ const ENDIAN_CONSTANT: [u8; 4] = [0x12, 0x34, 0x56, 0x78];
 const REVERSE_ENDIAN_CONSTANT: [u8; 4] = [0x78, 0x56, 0x34, 0x12];
 
 const NO_INDEX: u32 = 0xffffffff;
-
-#[derive(Debug)]
-pub struct DexFile<'a> {
-    header: Header<'a>,
-    string_data_items: Vec<Rc<StringDataItem>>,
-    type_id_data_items: Vec<Rc<TypeIdentifierDataItem>>,
-    proto_id_data_items: Vec<Rc<PrototypeDataItem>>,
-    field_data_items: Vec<Rc<FieldDataItem>>,
-    method_data_items: Vec<MethodDataItem>,
-    class_def_items: Vec<ClassDefDataItem>
-}
 
 #[derive(Debug)]
 pub struct Header<'a> {
@@ -126,29 +119,11 @@ fn parse_dex_file(buffer: &[u8], e: nom::Endianness) -> Result<DexFile, ParserEr
     })
 }
 
-#[derive(Debug)]
-struct ClassDefDataItem {
-    class_type: Rc<TypeIdentifierDataItem>,
-    access_flags: Vec<AccessFlag>,
-    superclass: Option<Rc<TypeIdentifierDataItem>>,
-    interfaces: Option<Vec<Rc<TypeIdentifierDataItem>>>,
-    source_file_name: Option<Rc<StringDataItem>>,
-    annotations: Option<Annotations>,
-    class_data: Option<ClassData>
-}
-
-#[derive(Debug, PartialEq)]
-enum AnnotationType {
-    Class,
-    Field,
-    Method
-}
-
-fn parse_class_defs<'a>(input: &'a[u8], tidi: &[Rc<TypeIdentifierDataItem>], sdi: &[Rc<StringDataItem>],
-                        fdi: &[Rc<FieldDataItem>], data: &'a[u8], data_offset: usize, size: usize, e: nom::Endianness)
-                        -> Result<(&'a[u8], Vec<ClassDefDataItem>), nom::Err<&'a[u8]>> {
+fn parse_class_defs<'a>(input: &'a[u8], tidi: &[Rc<TypeIdentifier>], sdi: &[Rc<StringData>],
+                        fdi: &[Rc<Field>], data: &'a[u8], data_offset: usize, size: usize, e: nom::Endianness)
+                        -> Result<(&'a[u8], Vec<ClassDefinition>), nom::Err<&'a[u8]>> {
     let mut v = Vec::with_capacity(size);
-    let (buffer, class_def_items) = parse_class_def_items(&input, e, size)?;
+    let (buffer, class_def_items) = parse_class_def_item(&input, e, size)?;
     for class_def_item in class_def_items {
         let class_type = tidi[class_def_item.class_idx as usize].clone();
 
@@ -251,7 +226,7 @@ fn parse_class_defs<'a>(input: &'a[u8], tidi: &[Rc<TypeIdentifierDataItem>], sdi
 //            let (_, class_data) = parse_class_data_item(&data[- data_offset]);
 //        }
 
-        v.push(ClassDefDataItem {
+        v.push(ClassDefinition {
             class_type, access_flags, superclass,
             interfaces, source_file_name, annotations,
             class_data });
@@ -260,91 +235,7 @@ fn parse_class_defs<'a>(input: &'a[u8], tidi: &[Rc<TypeIdentifierDataItem>], sdi
     Ok((buffer, v))
 }
 
-#[derive(Debug)]
-struct AnnotationOffsetItem {
-
-}
-
-#[derive(Debug)]
-struct FieldAnnotation {
-    field_data: Rc<FieldDataItem>,
-    annotations: Vec<AnnotationItem>
-}
-
-//field_annotations 	field_annotation[fields_size] (optional) 	list of associated field annotations. The elements of the list must be sorted in increasing order, by field_idx.
-//method_annotations 	method_annotation[methods_size] (optional) 	list of associated method annotations. The elements of the list must be sorted in increasing order, by method_idx.
-//parameter_annotations 	parameter_annotation[parameters_size] (optional) 	list of associated method parameter annotations. The elements of the list must be sorted in increasing order, by method_idx.
-
-
-
-#[derive(Debug)]
-struct Annotations {
-    class_annotations: Option<Vec<ClassAnnotation>>,
-    field_annotations: Option<Vec<FieldAnnotation>>
-}
-
-#[derive(Debug)]
-struct ClassData {
-    static_fields: Vec<EncodedField>,
-    instance_fields: Vec<EncodedField>,
-    direct_methods: Vec<EncodedMethod>,
-    virtual_methods: Vec<EncodedMethod>
-}
-
-//static_fields_size 	uleb128 	the number of static fields defined in this item
-//instance_fields_size 	uleb128 	the number of instance fields defined in this item
-//direct_methods_size 	uleb128 	the number of direct methods defined in this item
-//virtual_methods_size 	uleb128 	the number of virtual methods defined in this item
-//static_fields 	encoded_field[static_fields_size] 	the defined static fields, represented as a sequence of encoded elements. The fields must be sorted by field_idx in increasing order.
-//instance_fields 	encoded_field[instance_fields_size] 	the defined instance fields, represented as a sequence of encoded elements. The fields must be sorted by field_idx in increasing order.
-//direct_methods 	encoded_method[direct_methods_size] 	the defined direct (any of static, private, or constructor) methods, represented as a sequence of encoded elements. The methods must be sorted by method_idx in increasing order.
-//virtual_methods 	encoded_method[virtual_methods_size] 	the defined virtual (none of static, private, or constructor) methods, represented as a sequence of encoded elements. This list should not include inherited methods unless overridden by the class that this item represents. The methods must be sorted by method_idx in increasing order. The method_idx of a virtual method must not be the same as any direct method.
-
-#[derive(Debug)]
-struct RawClassDataItem {
-    static_fields_size: u64,
-    instance_fields_size: u64,
-    direct_methods_size: u64,
-    virtual_methods_size: u64,
-    static_fields: Vec<RawEncodedField>,
-    instance_fields: Vec<RawEncodedField>,
-    direct_methods: Vec<RawEncodedMethod>,
-    virtual_methods: Vec<RawEncodedMethod>
-}
-
-
-#[derive(Debug)]
-struct EncodedField {
-
-}
-
-#[derive(Debug)]
-struct EncodedMethod {
-
-}
-
-//field_idx_diff 	uleb128 	index into the field_ids list for the identity of this field (includes the name and descriptor), represented as a difference from the index of previous element in the list. The index of the first element in a list is represented directly.
-//access_flags 	uleb128 	access flags for the field (public, final, etc.). See "access_flags Definitions" for details.
-
-#[derive(Debug)]
-struct RawEncodedField {
-    field_idx_diff: u64,
-    access_flags: u64
-}
-
-#[derive(Debug)]
-struct RawEncodedMethod {
-    method_idx_diff: u64,
-    access_flags: u64,
-    code_off: u64
-}
-
-//method_idx_diff 	uleb128 	index into the method_ids list for the identity of this method (includes the name and descriptor), represented as a difference from the index of previous element in the list. The index of the first element in a list is represented directly.
-//access_flags 	uleb128 	access flags for the method (public, final, etc.). See "access_flags Definitions" for details.
-//code_off 	uleb128 	offset from the start of the file to the code structure for this method, or 0 if this method is either abstract or native. The offset should be to a location in the data section. The format of the data is specified by "code_item" below.
-
-
-
+// Docs: annotation_item
 named!(parse_annotation_item<&[u8], AnnotationItem>,
     peek!(
         do_parse!(
@@ -357,48 +248,11 @@ named!(parse_annotation_item<&[u8], AnnotationItem>,
 
 named!(take_one<&[u8], u8>, map!(take!(1), |x| { x[0] }));
 
-#[derive(Debug)]
-struct ClassAnnotation {
-    visibility: Visibility,
-    type_: Rc<TypeIdentifierDataItem>,
-    elements: Vec<AnnotationElement>
-}
-
-#[derive(Debug)]
-struct AnnotationElement {
-    name: Rc<StringDataItem>,
-    value: encoded_value::EncodedValue
-}
-
-#[derive(Debug)]
-struct AnnotationItem {
-    visibility: Visibility,
-    annotation: encoded_value::EncodedAnnotationItem
-}
-
-#[derive(Debug)]
-enum Visibility {
-    BUILD,
-    RUNTIME,
-    SYSTEM
-}
-
-impl Visibility {
-    fn parse(value: u8) -> Result<Self, ParserErr> {
-        match value {
-            0x00 => Ok(Visibility::BUILD),
-            0x01 => Ok(Visibility::RUNTIME),
-            0x02 => Ok(Visibility::SYSTEM),
-            _ => Err(ParserErr::from(format!("Could not find visibility for value 0x{:0X}", value)))
-        }
-    }
-}
-
-fn parse_prototype_data<'a>(input: &'a[u8], data: &'a[u8], sdi: &[Rc<StringDataItem>], tidi: &[Rc<TypeIdentifierDataItem>],
-                            size: usize, data_offset: usize, e: nom::Endianness) -> Result<(&'a[u8], Vec<Rc<PrototypeDataItem>>), nom::Err<&'a[u8]>> {
+fn parse_prototype_data<'a>(input: &'a[u8], data: &'a[u8], sdi: &[Rc<StringData>], tidi: &[Rc<TypeIdentifier>],
+                            size: usize, data_offset: usize, e: nom::Endianness) -> Result<(&'a[u8], Vec<Rc<Prototype>>), nom::Err<&'a[u8]>> {
 
     let mut v = Vec::with_capacity(size);
-    let (buffer, id_items) = parse_proto_id_items(&input, e, size)?;
+    let (buffer, id_items) = parse_proto_id_item(&input, e, size)?;
     for id_item in id_items {
         let shorty = sdi[id_item.shorty_idx as usize].clone();
         let return_type = tidi[id_item.return_type_idx as usize].clone();
@@ -414,19 +268,19 @@ fn parse_prototype_data<'a>(input: &'a[u8], data: &'a[u8], sdi: &[Rc<StringDataI
                 .collect())
         };
 
-        v.push(Rc::new(PrototypeDataItem {shorty, return_type, parameters}));
+        v.push(Rc::new(Prototype {shorty, return_type, parameters}));
     }
 
     Ok((buffer, v))
 }
 
-fn parse_method_data<'a>(input: &'a[u8], sdi: &[Rc<StringDataItem>], tidi: &[Rc<TypeIdentifierDataItem>],
-                        pdi: &[Rc<PrototypeDataItem>], size: usize, e: nom::Endianness) -> Result<(&'a[u8], Vec<MethodDataItem>), nom::Err<&'a[u8]>> {
-    let (input, items) = parse_method_id_items(&input, e, size)?;
+fn parse_method_data<'a>(input: &'a[u8], sdi: &[Rc<StringData>], tidi: &[Rc<TypeIdentifier>],
+                         pdi: &[Rc<Prototype>], size: usize, e: nom::Endianness) -> Result<(&'a[u8], Vec<Method>), nom::Err<&'a[u8]>> {
+    let (input, items) = parse_method_id_item(&input, e, size)?;
 
     Ok((input,
         items.into_iter().map(|item| {
-            MethodDataItem {
+            Method {
                 definer: tidi[item.class_idx as usize].clone(),
                 prototype: pdi[item.proto_idx as usize].clone(),
                 name: sdi[item.name_idx as usize].clone()
@@ -435,20 +289,14 @@ fn parse_method_data<'a>(input: &'a[u8], sdi: &[Rc<StringDataItem>], tidi: &[Rc<
     )
 }
 
-#[derive(Debug)]
-struct MethodDataItem {
-    definer: Rc<TypeIdentifierDataItem>,
-    prototype: Rc<PrototypeDataItem>,
-    name: Rc<StringDataItem>
-}
 
-fn parse_field_data<'a>(input: &'a[u8], sdi: &[Rc<StringDataItem>], tidi: &[Rc<TypeIdentifierDataItem>],
-                        size: usize, e: nom::Endianness) -> Result<(&'a[u8], Vec<Rc<FieldDataItem>>), nom::Err<&'a[u8]>> {
-    let (input, items) = parse_field_id_items(&input, e, size)?;
+fn parse_field_data<'a>(input: &'a[u8], sdi: &[Rc<StringData>], tidi: &[Rc<TypeIdentifier>],
+                        size: usize, e: nom::Endianness) -> Result<(&'a[u8], Vec<Rc<Field>>), nom::Err<&'a[u8]>> {
+    let (input, items) = parse_field_id_item(&input, e, size)?;
 
     Ok((input,
         items.into_iter().map(|item| {
-            Rc::new(FieldDataItem {
+            Rc::new(Field {
                 definer: tidi[item.class_idx as usize].clone(),
                 type_: tidi[item.type_idx as usize].clone(),
                 name: sdi[item.name_idx as usize].clone()
@@ -457,23 +305,16 @@ fn parse_field_data<'a>(input: &'a[u8], sdi: &[Rc<StringDataItem>], tidi: &[Rc<T
     )
 }
 
-#[derive(Debug)]
-struct FieldDataItem {
-    definer: Rc<TypeIdentifierDataItem>,
-    type_: Rc<TypeIdentifierDataItem>,
-    name: Rc<StringDataItem>
-}
-
-fn parse_type_data<'a>(input: &'a[u8], e: nom::Endianness, size: usize, sdi: &[Rc<StringDataItem>]) -> Result<(&'a[u8], Vec<Rc<TypeIdentifierDataItem>>), nom::Err<&'a[u8]>> {
+fn parse_type_data<'a>(input: &'a[u8], e: nom::Endianness, size: usize, sdi: &[Rc<StringData>]) -> Result<(&'a[u8], Vec<Rc<TypeIdentifier>>), nom::Err<&'a[u8]>> {
     let (buffer, idxs) = parse_u32_list(&input, e, size)?;
     Ok((buffer, idxs.into_iter()
-        .map(|idx| Rc::new(TypeIdentifierDataItem { descriptor: sdi[idx as usize].clone() }))
+        .map(|idx| Rc::new(TypeIdentifier { descriptor: sdi[idx as usize].clone() }))
         .collect()
     ))
 }
 
 fn parse_string_data<'a>(input: &'a[u8], header: &Header, data: &'a[u8], e: nom::Endianness)
-    -> Result<(&'a[u8], Vec<Rc<StringDataItem>>), nom::Err<&'a[u8]>> {
+                         -> Result<(&'a[u8], Vec<Rc<StringData>>), nom::Err<&'a[u8]>> {
     let mut v = Vec::with_capacity(header.string_ids_size as usize);
     // Pull out the list of offsets into data block
     let (buffer, offsets) = parse_u32_list(input, e, header.string_ids_size as usize)?;
@@ -486,18 +327,6 @@ fn parse_string_data<'a>(input: &'a[u8], header: &Header, data: &'a[u8], e: nom:
     Ok((buffer, v))
 }
 
-#[derive(Debug)]
-struct PrototypeDataItem {
-    shorty: Rc<StringDataItem>,
-    return_type: Rc<TypeIdentifierDataItem>,
-    parameters: Option<Vec<Rc<TypeIdentifierDataItem>>>
-}
-
-#[derive(Debug)]
-struct TypeIdentifierDataItem {
-    descriptor: Rc<StringDataItem>
-}
-
 // Length of uleb128 value is determined by the
 pub fn determine_uleb128_length(input: &[u8]) -> usize {
     input.iter()
@@ -506,7 +335,7 @@ pub fn determine_uleb128_length(input: &[u8]) -> usize {
         + 1
 }
 
-named!(parse_string_data_item <&[u8], StringDataItem> ,
+named!(parse_string_data_item<&[u8], StringData>,
     peek!(
         do_parse!(
             // uleb128 values are 1-5 bytes long - determine how long it is so we can parse the item
@@ -516,7 +345,7 @@ named!(parse_string_data_item <&[u8], StringDataItem> ,
                     map_res!(
                         take_until_and_consume!("\0"), str::from_utf8),
                     str::to_string)                                                 >>
-            (StringDataItem { utf16_size, data })
+            (StringData { utf16_size, data })
     ))
 );
 
@@ -534,50 +363,201 @@ fn read_uleb128(input: &[u8]) -> Result<u64, leb128::read::Error> {
     leb128::read::unsigned(&mut (input.clone()))
 }
 
-
-#[derive(Debug)]
-struct StringDataItem {
-    // Need to convert this from a uleb128 value
-    utf16_size: u64,
-    data: String
-}
-
 named_args!(parse_u32_list(e: nom::Endianness, size: usize)<&[u8], Vec<u32>>, count!(u32!(e), size));
 
-struct MapList {
-    size: u32,
-    list: Vec<MapListItem>
+// Docs: map_list
+named_args!(parse_map_list(e: nom::Endianness)<&[u8], RawMapList>,
+    peek!(
+        do_parse!(
+            size: u32!(e)                                           >>
+            list: count!(do_parse!(
+                    type_: map_res!(u16!(e), MapListItemType::parse)    >>
+                    unused: u16!(e)                                 >>
+                    size: u32!(e)                                   >>
+                    offset: u32!(e)                                 >>
+                    (RawMapListItem { type_, unused, size, offset })
+                ), size as usize)                                   >>
+
+            (RawMapList { size, list })
+        )
+    )
+);
+
+// Docs: type_list
+named_args!(parse_type_list(e: nom::Endianness)<&[u8], RawTypeList>,
+    peek!(
+        do_parse!(
+            size: u32!(e)                                       >>
+            list: count!(u16!(e), size as usize)                >>
+            (RawTypeList { size, list })
+    )
+));
+
+// Docs: proto_id_item
+named_args!(parse_proto_id_item(e: nom::Endianness, size: usize)<&[u8], Vec<RawPrototype>>,
+    count!(
+        do_parse!(
+            shorty_idx: u32!(e)         >>
+            return_type_idx: u32!(e)    >>
+            parameters_off: u32!(e)     >>
+            (RawPrototype { shorty_idx, return_type_idx, parameters_off })
+        ), size)
+);
+
+// Docs: field_id_item
+named_args!(parse_field_id_item(e: nom::Endianness, size: usize)<&[u8], Vec<RawField>>,
+    count!(
+        do_parse!(
+            class_idx: u16!(e)                                  >>
+            type_idx: u16!(e)                                   >>
+            name_idx: u32!(e)                                   >>
+            (RawField { class_idx, type_idx, name_idx })
+        ), size)
+);
+
+// Docs: method_id_item
+named_args!(parse_method_id_item(e: nom::Endianness, size: usize)<&[u8], Vec<RawMethod>>,
+    count!(
+        do_parse!(
+            class_idx: u16!(e)                                  >>
+            proto_idx: u16!(e)                                  >>
+            name_idx: u32!(e)                                   >>
+            (RawMethod { class_idx, proto_idx, name_idx })
+        ), size)
+);
+
+named_args!(parse_class_def_item(e: nom::Endianness, size: usize)<&[u8], Vec<RawClassDefinition>>,
+    count!(
+        do_parse!(
+            class_idx: u32!(e)                  >>
+            access_flags: u32!(e)               >>
+            superclass_idx: u32!(e)             >>
+            interfaces_off: u32!(e)             >>
+            source_file_idx: u32!(e)            >>
+            annotations_off: u32!(e)            >>
+            class_data_off: u32!(e)             >>
+            static_values_off: u32!(e)          >>
+
+            (RawClassDefinition { class_idx, access_flags, superclass_idx, interfaces_off,
+            source_file_idx, annotations_off, class_data_off, static_values_off})
+        ), size)
+);
+
+named_args!(parse_header(e: nom::Endianness)<&[u8], Header>,
+    do_parse!(
+        // Little bit of magic at the start
+        tag!(DEX_FILE_MAGIC)                >>
+        // Followed by the version (0380 for example)
+        // TODO: convert these to digits and stringify them
+        // TODO: just take(4)
+        version: dbg!(count_fixed!(u8, map!(take!(1), |x| { x[0] } ), 4)) >>
+        // adler32 checksum of the rest of this DEX file
+        // TODO: validate this later
+        checksum: u32!(e)                   >>
+        // SHA1 signature of the rest of the file
+        // TODO: verify this later
+        signature: take!(20)                >>
+        file_size: u32!(e)                  >>
+        header_size: u32!(e)                >>
+        endian_tag: u32!(e)                 >>
+        link_size: u32!(e)                  >>
+        link_off: u32!(e)                   >>
+        map_off: u32!(e)                    >>
+        // Count of strings in the string identifier list
+        string_ids_size: u32!(e)            >>
+        string_ids_off: u32!(e)             >>
+        type_ids_size: u32!(e)              >>
+        type_ids_off: u32!(e)               >>
+        proto_ids_size: u32!(e)             >>
+        proto_ids_off: u32!(e)              >>
+        field_ids_size: u32!(e)             >>
+        field_ids_off: u32!(e)              >>
+        method_ids_size: u32!(e)            >>
+        method_ids_off: u32!(e)             >>
+        class_defs_size: u32!(e)            >>
+        class_defs_off: u32!(e)             >>
+        data_size: u32!(e)                  >>
+        data_off: u32!(e)                   >>
+
+        (Header { version, checksum, signature, file_size, header_size, endian_tag, link_size, link_off,
+         map_off, string_ids_size, string_ids_off, type_ids_size, type_ids_off, proto_ids_size,
+         proto_ids_off, field_ids_size, field_ids_off, method_ids_size, method_ids_off, class_defs_size,
+         class_defs_off, data_size, data_off })
+    )
+);
+
+// Docs: annotation_directory_item
+named_args!(parse_annotations_directory_item(e:nom::Endianness)<&[u8], RawAnnotations>,
+    peek!(do_parse!(
+        class_annotations_off: u32!(e)                                                          >>
+        fld_size: u32!(e)                                                                    >>
+        mtd_size: u32!(e)                                                         >>
+        prm_size: u32!(e)                                                      >>
+        fld_annot: cond!(fld_size > 0, count!(apply!(parse_field_annotation_item, e), fld_size as usize)) >>
+        mtd_annot: cond!(mtd_size > 0, count!(apply!(parse_method_annotation_item, e), mtd_size as usize)) >>
+        prm_annot: cond!(prm_size > 0, count!(apply!(parse_parameter_annotation_item, e), prm_size as usize)) >>
+        (RawAnnotations { class_annotations_off, fld_annot, mtd_annot, prm_annot })
+    ))
+);
+
+// Docs: field_annotation_item
+named_args!(parse_field_annotation_item(e: nom::Endianness)<&[u8], RawFieldAnnotation>,
+    do_parse!(
+        field_idx: u32!(e) >>
+        annotations_offset: u32!(e) >>
+        (RawFieldAnnotation { field_idx, annotations_offset })
+    )
+);
+
+// Docs: method_annotation_item
+named_args!(parse_method_annotation_item(e: nom::Endianness)<&[u8], RawMethodAnnotation>,
+    do_parse!(
+        method_idx: u32!(e) >>
+        annotations_offset: u32!(e) >>
+        (RawMethodAnnotation { method_idx, annotations_offset })
+    )
+);
+
+// Docs: parameter_annotation_item
+named_args!(parse_parameter_annotation_item(e: nom::Endianness)<&[u8], RawParameterAnnotation>,
+    do_parse!(
+        method_idx: u32!(e) >>
+        annotations_offset: u32!(e) >>
+        (RawParameterAnnotation { method_idx, annotations_offset })
+    )
+);
+
+// Docs: annotation_set_item
+named_args!(parse_annotation_set_item(e: nom::Endianness)<&[u8], RawAnnotationSetItem>,
+    peek!(
+        do_parse!(
+            size: u32!(e)                               >>
+            entries: count!(call!(parse_annotation_offset_item, e), size as usize)     >>
+            (RawAnnotationSetItem { size, entries })
+        )
+    )
+);
+
+// Docs: annotation_offset_item
+named_args!(parse_annotation_offset_item(e: nom::Endianness)<&[u8], u32>, u32!(e));
+
+//=============================
+#[derive(Debug, PartialEq)]
+enum AnnotationType {
+    Class,
+    Field,
+    Method
 }
 
-struct MapListItem {
-    type_: MapListItemType,
-    unused: u16,
-    size: u32,
-    offset: u32
-}
-
-#[derive(PartialEq)]
-enum MapListItemType {
-    HeaderItem,
-    StringIdItem,
-    TypeIdItem,
-    ProtoIdItem,
-    FieldIdItem,
-    MethodIdItem,
-    ClassDefItem,
-    CallSiteIdItem,
-    MethodHandleItem,
-    MapList,
-    TypeList,
-    AnnotationSetRefList,
-    AnnotationSetItem,
-    ClassDataItem,
-    CodeItem,
-    StringDataItem,
-    DebugInfoItem,
-    AnnotationItem,
-    EncodedArrayItem,
-    AnnotationsDirectoryItem
+impl Visibility {
+    pub fn parse(value: u8) -> Result<Self, ParserErr> {
+        match value {
+            0x00 => Ok(Visibility::BUILD),
+            0x01 => Ok(Visibility::RUNTIME),
+            0x02 => Ok(Visibility::SYSTEM),
+            _ => Err(ParserErr::from(format!("Could not find visibility for value 0x{:0X}", value)))
+        }
+    }
 }
 
 impl MapListItemType {
@@ -608,32 +588,6 @@ impl MapListItemType {
     }
 }
 
-//noinspection RsEnumVariantNaming
-#[derive(PartialEq, Debug)]
-enum AccessFlag {
-    ACC_PUBLIC,
-    ACC_PRIVATE,
-    ACC_PROTECTED,
-    ACC_STATIC,
-    ACC_FINAL,
-    ACC_SYNCHRONIZED,
-    ACC_VOLATILE,
-    ACC_BRIDGE,
-    ACC_TRANSIENT,
-    ACC_VARARGS,
-    ACC_NATIVE,
-    ACC_INTERFACE,
-    ACC_ABSTRACT,
-    ACC_STRICT,
-    ACC_SYNTHETIC,
-    ACC_ANNOTATION,
-    ACC_ENUM,
-    UNUSED,
-    ACC_CONSTRUCTOR,
-    ACC_DECLARED_SYNCHRONIZED
-}
-
-// TODO: need to know if this is a class, field or method
 impl AccessFlag {
     fn parse(value: u32, type_: AnnotationType) -> Vec<Self> {
         let mut v = vec!();
@@ -719,240 +673,3 @@ impl AccessFlag {
         v
     }
 }
-
-named_args!(parse_map_list(e: nom::Endianness)<&[u8], MapList>,
-    peek!(
-        do_parse!(
-            size: u32!(e)                                           >>
-            list: count!(do_parse!(
-                    type_: map_res!(u16!(e), MapListItemType::parse)    >>
-                    unused: u16!(e)                                 >>
-                    size: u32!(e)                                   >>
-                    offset: u32!(e)                                 >>
-                    (MapListItem { type_, unused, size, offset })
-                ), size as usize)                                   >>
-
-            (MapList { size, list })
-        )
-    )
-);
-
-named_args!(parse_type_list(e: nom::Endianness)<&[u8], TypeListItem>,
-    peek!(
-        do_parse!(
-            size: u32!(e)                                       >>
-            list: count!(u16!(e), size as usize)                >>
-            (TypeListItem { size, list })
-    )
-));
-
-struct TypeListItem {
-    // Size of the following list
-    size: u32,
-    list: Vec<u16>
-}
-
-named_args!(parse_proto_id_items(e: nom::Endianness, size: usize)<&[u8], Vec<ProtoIdItem>>,
-    count!(
-        do_parse!(
-            shorty_idx: u32!(e)         >>
-            return_type_idx: u32!(e)    >>
-            parameters_off: u32!(e)     >>
-            (ProtoIdItem { shorty_idx, return_type_idx, parameters_off })
-        ), size)
-);
-
-struct ProtoIdItem {
-    // Index into the string IDs list for the descriptor string of this prototype
-    shorty_idx: u32,
-    // Index into the type_ids list for the return type of this prototype
-    return_type_idx: u32,
-    parameters_off: u32
-}
-
-named_args!(parse_field_id_items(e: nom::Endianness, size: usize)<&[u8], Vec<FieldIdItem>>,
-    count!(
-        do_parse!(
-            class_idx: u16!(e)                                  >>
-            type_idx: u16!(e)                                   >>
-            name_idx: u32!(e)                                   >>
-            (FieldIdItem { class_idx, type_idx, name_idx })
-        ), size)
-);
-
-struct FieldIdItem {
-    class_idx: u16,
-    type_idx: u16,
-    name_idx: u32
-}
-
-named_args!(parse_method_id_items(e: nom::Endianness, size: usize)<&[u8], Vec<MethodIdItem>>,
-    count!(
-        do_parse!(
-            class_idx: u16!(e)                                  >>
-            proto_idx: u16!(e)                                  >>
-            name_idx: u32!(e)                                   >>
-            (MethodIdItem { class_idx, proto_idx, name_idx })
-        ), size)
-);
-
-struct MethodIdItem {
-    class_idx: u16,
-    proto_idx: u16,
-    name_idx: u32
-}
-
-named_args!(parse_class_def_items(e: nom::Endianness, size: usize)<&[u8], Vec<ClassDefItem>>,
-    count!(
-        do_parse!(
-            class_idx: u32!(e)                  >>
-            access_flags: u32!(e)               >>
-            superclass_idx: u32!(e)             >>
-            interfaces_off: u32!(e)             >>
-            source_file_idx: u32!(e)            >>
-            annotations_off: u32!(e)            >>
-            class_data_off: u32!(e)             >>
-            static_values_off: u32!(e)          >>
-
-            (ClassDefItem { class_idx, access_flags, superclass_idx, interfaces_off,
-            source_file_idx, annotations_off, class_data_off, static_values_off})
-        ), size)
-);
-
-struct ClassDefItem {
-    class_idx: u32,
-    access_flags: u32,
-    superclass_idx: u32,
-    interfaces_off: u32,
-    source_file_idx: u32,
-    annotations_off: u32,
-    class_data_off: u32,
-    static_values_off: u32
-}
-
-named_args!(parse_header(e: nom::Endianness)<&[u8], Header>,
-    do_parse!(
-        // Little bit of magic at the start
-        tag!(DEX_FILE_MAGIC)                >>
-        // Followed by the version (0380 for example)
-        // TODO: convert these to digits and stringify them
-        // TODO: just take(4)
-        version: dbg!(count_fixed!(u8, map!(take!(1), |x| { x[0] } ), 4)) >>
-        // adler32 checksum of the rest of this DEX file
-        // TODO: validate this later
-        checksum: u32!(e)                   >>
-        // SHA1 signature of the rest of the file
-        // TODO: verify this later
-        signature: take!(20)                >>
-        file_size: u32!(e)                  >>
-        header_size: u32!(e)                >>
-        endian_tag: u32!(e)                 >>
-        link_size: u32!(e)                  >>
-        link_off: u32!(e)                   >>
-        map_off: u32!(e)                    >>
-        // Count of strings in the string identifier list
-        string_ids_size: u32!(e)            >>
-        string_ids_off: u32!(e)             >>
-        type_ids_size: u32!(e)              >>
-        type_ids_off: u32!(e)               >>
-        proto_ids_size: u32!(e)             >>
-        proto_ids_off: u32!(e)              >>
-        field_ids_size: u32!(e)             >>
-        field_ids_off: u32!(e)              >>
-        method_ids_size: u32!(e)            >>
-        method_ids_off: u32!(e)             >>
-        class_defs_size: u32!(e)            >>
-        class_defs_off: u32!(e)             >>
-        data_size: u32!(e)                  >>
-        data_off: u32!(e)                   >>
-
-        (Header { version, checksum, signature, file_size, header_size, endian_tag, link_size, link_off,
-         map_off, string_ids_size, string_ids_off, type_ids_size, type_ids_off, proto_ids_size,
-         proto_ids_off, field_ids_size, field_ids_off, method_ids_size, method_ids_off, class_defs_size,
-         class_defs_off, data_size, data_off })
-    )
-);
-
-named_args!(parse_annotations_directory_item(e:nom::Endianness)<&[u8], AnnotationsDirectoryItem>,
-    peek!(do_parse!(
-        class_annotations_off: u32!(e)                                                          >>
-        fld_size: u32!(e)                                                                    >>
-        mtd_size: u32!(e)                                                         >>
-        prm_size: u32!(e)                                                      >>
-        fld_annot: cond!(fld_size > 0, count!(apply!(parse_field_annotation_item, e), fld_size as usize)) >>
-        mtd_annot: cond!(mtd_size > 0, count!(apply!(parse_method_annotation_item, e), mtd_size as usize)) >>
-        prm_annot: cond!(prm_size > 0, count!(apply!(parse_parameter_annotation_item, e), prm_size as usize)) >>
-        (AnnotationsDirectoryItem { class_annotations_off, fld_annot, mtd_annot, prm_annot })
-    ))
-);
-
-//Docs: field_annotation_item
-named_args!(parse_field_annotation_item(e: nom::Endianness)<&[u8], RawFieldAnnotation>,
-    do_parse!(
-        field_idx: u32!(e) >>
-        annotations_offset: u32!(e) >>
-        (RawFieldAnnotation { field_idx, annotations_offset })
-    )
-);
-
-//Docs: method_annotation_item
-named_args!(parse_method_annotation_item(e: nom::Endianness)<&[u8], RawMethodAnnotation>,
-    do_parse!(
-        method_idx: u32!(e) >>
-        annotations_offset: u32!(e) >>
-        (RawMethodAnnotation { method_idx, annotations_offset })
-    )
-);
-
-//Docs: parameter_annotation_item
-named_args!(parse_parameter_annotation_item(e: nom::Endianness)<&[u8], RawParameterAnnotation>,
-    do_parse!(
-        method_idx: u32!(e) >>
-        annotations_offset: u32!(e) >>
-        (RawParameterAnnotation { method_idx, annotations_offset })
-    )
-);
-
-#[derive(Debug)]
-struct AnnotationsDirectoryItem {
-    class_annotations_off: u32,
-    fld_annot: Option<Vec<RawFieldAnnotation>>,
-    mtd_annot: Option<Vec<RawMethodAnnotation>>,
-    prm_annot: Option<Vec<RawParameterAnnotation>>
-}
-
-#[derive(Debug)]
-struct RawFieldAnnotation {
-    field_idx: u32,
-    annotations_offset: u32
-}
-
-#[derive(Debug)]
-struct RawMethodAnnotation {
-    method_idx: u32,
-    annotations_offset: u32
-}
-
-#[derive(Debug)]
-struct RawParameterAnnotation {
-    method_idx: u32,
-    annotations_offset: u32
-}
-
-#[derive(Debug)]
-struct AnnotationSetItem {
-    size: u32,
-    entries: Vec<u32>
-}
-
-named_args!(parse_annotation_set_item(e: nom::Endianness)<&[u8], AnnotationSetItem>,
-    peek!(
-        do_parse!(
-            size: u32!(e)                               >>
-            entries: count!(call!(parse_annotation_offset_item, e), size as usize)     >>
-            (AnnotationSetItem { size, entries })
-        )
-    )
-);
-
-named_args!(parse_annotation_offset_item(e: nom::Endianness)<&[u8], u32>, u32!(e));

@@ -42,32 +42,32 @@ fn parse_value(value: &[u8], value_type: u8) -> Result<((), EncodedValue), nom::
 }
 
 #[derive(Debug)]
-pub struct EncodedAnnotationItem {
+pub struct RawEncodedAnnotationItem {
     pub type_idx: u64,
     size: u64,
-    pub elements: Vec<AnnotationElementItem>
+    pub elements: Vec<RawAnnotationElementItem>
 }
 
 #[derive(Debug)]
-pub struct AnnotationElementItem {
+pub struct RawAnnotationElementItem {
     pub name_idx: u64,
     pub value: EncodedValue
 }
 
-named!(pub parse_encoded_annotation_item<&[u8], EncodedAnnotationItem>,
+named!(pub parse_encoded_annotation_item<&[u8], RawEncodedAnnotationItem>,
     do_parse!(
         type_idx: call!(parse_uleb128) >>
         size: call!(parse_uleb128) >>
         elements: count!(call!(parse_annotation_element_item), size as usize) >>
-        (EncodedAnnotationItem { type_idx, size, elements })
+        (RawEncodedAnnotationItem { type_idx, size, elements })
     )
 );
 
-named!(parse_annotation_element_item<&[u8], AnnotationElementItem>,
+named!(parse_annotation_element_item<&[u8], RawAnnotationElementItem>,
     do_parse!(
         name_idx: call!(parse_uleb128)   >>
         value: call!(parse_encoded_value_item)   >>
-        (AnnotationElementItem { name_idx, value })
+        (RawAnnotationElementItem { name_idx, value })
     )
 );
 
@@ -89,7 +89,7 @@ pub enum EncodedValue {
     Method(u32),
     Enum(u32),
     Array(EncodedArrayItem),
-    Annotation(EncodedAnnotationItem),
+    Annotation(RawEncodedAnnotationItem),
     Null,
     Boolean(bool)
 }
