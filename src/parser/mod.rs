@@ -209,7 +209,7 @@ fn parse_class_defs<'a>(input: &'a[u8], tidi: &[Rc<TypeIdentifierDataItem>], sdi
                 // Each entry here is an offset to an annotation_item in the data pool
                 for annotation_offset in set_item.entries {
                     // Every annotation item contains a visibility, a type and an annotation
-                    let (_, annotation_item) = parse_annotation_item(&data[annotation_offset as usize - data_offset..], e)?;
+                    let (_, annotation_item) = parse_annotation_item(&data[annotation_offset as usize - data_offset..])?;
 
                     class_annotations.push(ClassAnnotation {
                         visibility: annotation_item.visibility,
@@ -237,7 +237,7 @@ fn parse_class_defs<'a>(input: &'a[u8], tidi: &[Rc<TypeIdentifierDataItem>], sdi
 
                         let mut annotations = vec!();
                         for annot_offset in asi.entries {
-                            let (_, ai) = parse_annotation_item(&data[annot_offset as usize - data_offset..], e)?;
+                            let (_, ai) = parse_annotation_item(&data[annot_offset as usize - data_offset..])?;
                             annotations.push(ai);
                         }
 
@@ -361,10 +361,10 @@ struct RawEncodedMethod {
 
 
 
-named_args!(parse_annotation_item(e: nom::Endianness)<&[u8], AnnotationItem>,
+named!(parse_annotation_item<&[u8], AnnotationItem>,
     peek!(do_parse!(
         visibility: map!(take!(1), |x| { Visibility::parse(x[0]) })  >>
-        annotation: apply!(encoded_value::parse_encoded_annotation_item, e)    >>
+        annotation: call!(encoded_value::parse_encoded_annotation_item)    >>
         (AnnotationItem { visibility, annotation })
 )));
 
@@ -542,7 +542,7 @@ named!(parse_string_data_item <&[u8], StringDataItem> ,
     ))
 );
 
-named_args!(parse_uleb128(e: nom::Endianness)<&[u8], u64>,
+named!(parse_uleb128<&[u8], u64>,
     do_parse!(
         len: peek!(map!(take!(5), determine_uleb128_length))    >>
         value: map_res!(take!(len), read_uleb128)          >>
