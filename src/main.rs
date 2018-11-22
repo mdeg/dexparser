@@ -20,7 +20,7 @@ fn main() {
     file.read_to_end(&mut dex_file);
 
     match parser::parse(&dex_file) {
-        Ok(res) => {},//println!("Result: {:?}", res),
+        Ok(res) => println!("Result: {:#?}", res),
         Err(e) => println!("ERROR!: {:#?}", e)
     }
 }

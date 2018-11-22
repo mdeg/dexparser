@@ -1,27 +1,25 @@
 use std::{fmt, rc::Rc};
-use super::encoded_value::*;
 use super::encoded_value;
 
 #[derive(Debug)]
-pub struct DexFile<'a> {
-    pub header: super::Header<'a>,
-    pub string_data_items: Vec<Rc<StringData>>,
-    pub type_id_data_items: Vec<Rc<TypeIdentifier>>,
-    pub proto_id_data_items: Vec<Rc<Prototype>>,
-    pub field_data_items: Vec<Rc<Field>>,
-    pub method_data_items: Vec<Method>,
+pub struct DexFile {
+    pub header: super::Header,
+    pub string_data: Vec<Rc<StringData>>,
+    pub type_identifiers: Vec<Rc<TypeIdentifier>>,
+    pub prototypes: Vec<Rc<Prototype>>,
+    pub fields: Vec<Rc<Field>>,
+    pub methods: Vec<Method>,
     pub class_def_items: Vec<ClassDefinition>
 }
 
-//#[derive(Debug)]
-//pub struct Header<'a> {
-//    pub version: [u8; 4],
-//    pub checksum: u32,
-//    pub signature: &'a[u8],
-//    pub file_size: u32,
-//    pub header_size: u32,
-//    pub endian_tag: u32
-//}
+#[derive(Debug)]
+pub struct Header {
+    pub version: String,
+    pub checksum: String,
+    pub signature: String,
+    pub file_size: u32,
+    pub endianness: nom::Endianness
+}
 
 #[derive(Debug)]
 pub struct StringData {

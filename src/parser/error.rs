@@ -29,6 +29,14 @@ impl From<String> for ParserErr {
     }
 }
 
+impl From<::std::string::FromUtf8Error> for ParserErr {
+    fn from(e: ::std::string::FromUtf8Error) -> Self {
+        // TODO
+        println!("error! {:?}", e);
+        ParserErr
+    }
+}
+
 impl From<ParserErr> for nom::Err<&[u8]> {
     fn from(e: ParserErr) -> Self {
         nom::Err::Failure(nom::Context::Code(b"TODO", nom::ErrorKind::Custom(0)))

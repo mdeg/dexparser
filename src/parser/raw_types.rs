@@ -1,3 +1,70 @@
+// Raw type of the DEX file
+//
+#[derive(Debug)]
+pub struct RawDexFile {
+    // Docs: header
+    pub header: RawHeader,
+    // Docs: string_id_item
+    pub string_id_items: Vec<u32>,
+    // Docs: type_id_item
+    pub type_id_items: Vec<u32>,
+    // Docs: proto_id_item
+    pub proto_id_items: Vec<RawPrototype>,
+    // Docs: field_id_item
+    pub field_id_items: Vec<RawField>,
+    // Docs: method_id_item
+    pub method_id_items: Vec<RawMethod>
+}
+
+#[derive(Debug)]
+pub struct RawHeader {
+    // DEX file version
+    pub version: [u8; 4],
+    // adler32 checksum of the rest of the file (everything except the magic, version, and this)
+    pub checksum: u32,
+    // SHA-1 hash of the rest of the file
+    pub signature: [u8; 20],
+    // Size of the entire file in bytes
+    pub file_size: u32,
+    // Size of the header in bytes
+    pub header_size: u32,
+    // Tag indicating little-endian or big-endian
+    pub endian_tag: u32,
+    // Size of the link section (or 0 if not linked)
+    pub link_size: u32,
+    // Offset into the link section (or 0 if not linked)
+    pub link_off: u32,
+    // Offset from the start of the file to the map item
+    pub map_off: u32,
+    // Number of string IDs
+    pub string_ids_size: u32,
+    // Offset string IDs begin at
+    pub string_ids_off: u32,
+    // Number of type IDs
+    pub type_ids_size: u32,
+    // Offset type IDs begin at
+    pub type_ids_off: u32,
+    // Number of prototypes
+    pub proto_ids_size: u32,
+    // Offset prototypes begin at
+    pub proto_ids_off: u32,
+    // Number of field identifiers
+    pub field_ids_size: u32,
+    // Offset field identifiers begin at
+    pub field_ids_off: u32,
+    // Number of method identifiers
+    pub method_ids_size: u32,
+    // Offset method identifiers begin at
+    pub method_ids_off: u32,
+    // Number of class defintions
+    pub class_defs_size: u32,
+    // Offset class definitions begin at
+    pub class_defs_off: u32,
+    // Size of the 'data' blob
+    pub data_size: u32,
+    // Offset the 'data' blob begins at
+    pub data_off: u32
+}
 
 //static_fields_size 	uleb128 	the number of static fields defined in this item
 //instance_fields_size 	uleb128 	the number of instance fields defined in this item

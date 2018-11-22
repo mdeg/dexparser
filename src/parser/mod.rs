@@ -2,6 +2,7 @@ mod encoded_value;
 mod error;
 mod result_types;
 mod raw_types;
+mod parse_data;
 
 use self::result_types::*;
 use self::raw_types::*;
@@ -19,34 +20,6 @@ const REVERSE_ENDIAN_CONSTANT: [u8; 4] = [0x78, 0x56, 0x34, 0x12];
 
 const NO_INDEX: u32 = 0xffffffff;
 
-#[derive(Debug)]
-pub struct Header<'a> {
-    pub version: [u8; 4],
-    pub checksum: u32,
-    pub signature: &'a[u8],
-    pub file_size: u32,
-    pub header_size: u32,
-    pub endian_tag: u32,
-    pub link_size: u32,
-    pub link_off: u32,
-    pub map_off: u32,
-    pub string_ids_size: u32,
-    pub string_ids_off: u32,
-    pub type_ids_size: u32,
-    pub type_ids_off: u32,
-    pub proto_ids_size: u32,
-    pub proto_ids_off: u32,
-    pub field_ids_size: u32,
-    pub field_ids_off: u32,
-    pub method_ids_size: u32,
-    pub method_ids_off: u32,
-    pub class_defs_size: u32,
-    pub class_defs_off: u32,
-    pub data_size: u32,
-    pub data_off: u32
-}
-
-
 pub fn parse(buffer: &[u8]) -> Result<DexFile, ParserErr> {
 
     // Peek ahead to determine endianness
@@ -60,13 +33,8 @@ pub fn parse(buffer: &[u8]) -> Result<DexFile, ParserErr> {
         }
     };
 
-    // TODO: proper error
-//    parse_dex_file(buffer, endianness)
-//        .map(|(_, res)| res)
-//        .map_err(|e| ParserErr )
-
-
-    let res = parse_dex_file(buffer, endianness);
+    let raw = parse_dex_file(buffer, endianness)?.1;
+    let res = parse_data::transform_dex_file(raw, endianness);
 
     match res {
         Ok(dexf) => Ok(dexf),
@@ -77,47 +45,66 @@ pub fn parse(buffer: &[u8]) -> Result<DexFile, ParserErr> {
     }
 }
 
-fn parse_dex_file(buffer: &[u8], e: nom::Endianness) -> Result<DexFile, ParserErr> {
-    let (buffer, header) = parse_header(buffer, e)?;
+named_args!(parse_string_id_items(size: usize, e: nom::Endianness)<&[u8], Vec<u32>>,
+    call!(parse_u32_list, size, e)
+);
 
-    // Version 038 adds some new index pools with sizes not indicated in the header
-    // Need to peek at this a bit early so we know how big some of the index pools are
-    // Very inconvenient!
-    let (_, map_list) = parse_map_list(&buffer[(header.map_off - header.header_size) as usize ..], e)?;
+named_args!(parse_dex_file(e: nom::Endianness)<&[u8], RawDexFile>,
+    do_parse!(
+        header: call!(parse_header, e) >>
+        // TODO: map lisT?
+        string_id_items: call!(parse_string_id_items, header.string_ids_size as usize, e) >>
+        type_id_items: call!(parse_u32_list, header.type_ids_size as usize, e)  >>
+        proto_id_items: call!(parse_proto_id_items, header.proto_ids_size as usize, e) >>
+        field_id_items: call!(parse_field_id_items, header.field_ids_size as usize, e)    >>
+        method_id_items: call!(parse_method_id_items, header.method_ids_size as usize, e)  >>
 
-    // Peek ahead and pull out the data segment
-    let (_, data) = take!(&buffer[header.data_off as usize - header.header_size as usize .. ], header.data_size)?;
+        (RawDexFile { header, string_id_items, type_id_items, proto_id_items,
+         field_id_items, method_id_items })
+    )
+);
 
-    // Pull out string data objects
-    let (buffer, string_data_items) = parse_string_data(&buffer[..], &header, &data, e)?;
-
-    let (buffer, type_id_data_items) = parse_type_data(&buffer, e, header.type_ids_size as usize, &string_data_items)?;
-
-    let (buffer, proto_id_data_items) = parse_prototype_data(&buffer, &data, &string_data_items, &type_id_data_items,
-                                                             header.proto_ids_size as usize, header.data_off as usize, e)?;
-
-    let (buffer, field_data_items) = parse_field_data(&buffer, &string_data_items, &type_id_data_items, header.field_ids_size as usize, e)?;
-
-    let (buffer, method_data_items) = parse_method_data(&buffer, &string_data_items, &type_id_data_items, &proto_id_data_items, header.method_ids_size as usize, e)?;
-
-    let (buffer, class_def_items) = parse_class_defs(&buffer, &type_id_data_items, &string_data_items, &field_data_items, &data, header.data_off as usize, header.class_defs_size as usize, e)?;
-
-    let call_site_idxs = parse_u32_list(buffer, e,
-                                        map_list.list.iter().filter(|item| item.type_ == MapListItemType::CallSiteIdItem).count());
-
-    let method_handle_items_idxs = parse_u32_list(buffer, e,
-                                        map_list.list.iter().filter(|item| item.type_  == MapListItemType::MethodHandleItem).count());
-
-    Ok(DexFile {
-        header,
-        string_data_items,
-        type_id_data_items,
-        proto_id_data_items,
-        field_data_items,
-        method_data_items,
-        class_def_items
-    })
-}
+//fn parse_dex_file(buffer: &[u8], e: nom::Endianness) -> Result<DexFile, ParserErr> {
+//    let (buffer, header) = parse_header(buffer, e)?;
+//
+//    // Version 038 adds some new index pools with sizes not indicated in the header
+//    // Need to peek at this a bit early so we know how big some of the index pools are
+//    // Very inconvenient!
+//    let (_, map_list) = parse_map_list(&buffer[(header.map_off - header.header_size) as usize ..], e)?;
+//
+//    // Peek ahead and pull out the data segment
+//    let (_, data) = take!(&buffer[header.data_off as usize - header.header_size as usize .. ], header.data_size)?;
+//
+//    // Pull out string data objects
+//    let (buffer, string_data_items) = parse_string_data(&buffer[..], &header, &data, e)?;
+//
+//    let (buffer, type_id_data_items) = parse_type_data(&buffer, e, header.type_ids_size as usize, &string_data_items)?;
+//
+//    let (buffer, proto_id_data_items) = parse_prototype_data(&buffer, &data, &string_data_items, &type_id_data_items,
+//                                                             header.proto_ids_size as usize, header.data_off as usize, e)?;
+//
+//    let (buffer, field_data_items) = parse_field_data(&buffer, &string_data_items, &type_id_data_items, header.field_ids_size as usize, e)?;
+//
+//    let (buffer, method_data_items) = parse_method_data(&buffer, &string_data_items, &type_id_data_items, &proto_id_data_items, header.method_ids_size as usize, e)?;
+//
+//    let (buffer, class_def_items) = parse_class_defs(&buffer, &type_id_data_items, &string_data_items, &field_data_items, &data, header.data_off as usize, header.class_defs_size as usize, e)?;
+//
+//    let call_site_idxs = parse_u32_list(buffer, e,
+//                                        map_list.list.iter().filter(|item| item.type_ == MapListItemType::CallSiteIdItem).count());
+//
+//    let method_handle_items_idxs = parse_u32_list(buffer, e,
+//                                        map_list.list.iter().filter(|item| item.type_  == MapListItemType::MethodHandleItem).count());
+//
+//    Ok(DexFile {
+//        header,
+//        string_data_items,
+//        type_id_data_items,
+//        proto_id_data_items,
+//        field_data_items,
+//        method_data_items,
+//        class_def_items
+//    })
+//}
 
 fn parse_class_defs<'a>(input: &'a[u8], tidi: &[Rc<TypeIdentifier>], sdi: &[Rc<StringData>],
                         fdi: &[Rc<Field>], data: &'a[u8], data_offset: usize, size: usize, e: nom::Endianness)
@@ -248,84 +235,6 @@ named!(parse_annotation_item<&[u8], AnnotationItem>,
 
 named!(take_one<&[u8], u8>, map!(take!(1), |x| { x[0] }));
 
-fn parse_prototype_data<'a>(input: &'a[u8], data: &'a[u8], sdi: &[Rc<StringData>], tidi: &[Rc<TypeIdentifier>],
-                            size: usize, data_offset: usize, e: nom::Endianness) -> Result<(&'a[u8], Vec<Rc<Prototype>>), nom::Err<&'a[u8]>> {
-
-    let mut v = Vec::with_capacity(size);
-    let (buffer, id_items) = parse_proto_id_item(&input, e, size)?;
-    for id_item in id_items {
-        let shorty = sdi[id_item.shorty_idx as usize].clone();
-        let return_type = tidi[id_item.return_type_idx as usize].clone();
-
-        let parameters = if id_item.parameters_off == 0 {
-            None
-        } else {
-            Some(parse_type_list(&data[id_item.parameters_off as usize - data_offset..], e)?
-                .1
-                .list
-                .into_iter()
-                .map(|idx| tidi[idx as usize].clone())
-                .collect())
-        };
-
-        v.push(Rc::new(Prototype {shorty, return_type, parameters}));
-    }
-
-    Ok((buffer, v))
-}
-
-fn parse_method_data<'a>(input: &'a[u8], sdi: &[Rc<StringData>], tidi: &[Rc<TypeIdentifier>],
-                         pdi: &[Rc<Prototype>], size: usize, e: nom::Endianness) -> Result<(&'a[u8], Vec<Method>), nom::Err<&'a[u8]>> {
-    let (input, items) = parse_method_id_item(&input, e, size)?;
-
-    Ok((input,
-        items.into_iter().map(|item| {
-            Method {
-                definer: tidi[item.class_idx as usize].clone(),
-                prototype: pdi[item.proto_idx as usize].clone(),
-                name: sdi[item.name_idx as usize].clone()
-            }
-        }).collect())
-    )
-}
-
-
-fn parse_field_data<'a>(input: &'a[u8], sdi: &[Rc<StringData>], tidi: &[Rc<TypeIdentifier>],
-                        size: usize, e: nom::Endianness) -> Result<(&'a[u8], Vec<Rc<Field>>), nom::Err<&'a[u8]>> {
-    let (input, items) = parse_field_id_item(&input, e, size)?;
-
-    Ok((input,
-        items.into_iter().map(|item| {
-            Rc::new(Field {
-                definer: tidi[item.class_idx as usize].clone(),
-                type_: tidi[item.type_idx as usize].clone(),
-                name: sdi[item.name_idx as usize].clone()
-            })
-        }).collect())
-    )
-}
-
-fn parse_type_data<'a>(input: &'a[u8], e: nom::Endianness, size: usize, sdi: &[Rc<StringData>]) -> Result<(&'a[u8], Vec<Rc<TypeIdentifier>>), nom::Err<&'a[u8]>> {
-    let (buffer, idxs) = parse_u32_list(&input, e, size)?;
-    Ok((buffer, idxs.into_iter()
-        .map(|idx| Rc::new(TypeIdentifier { descriptor: sdi[idx as usize].clone() }))
-        .collect()
-    ))
-}
-
-fn parse_string_data<'a>(input: &'a[u8], header: &Header, data: &'a[u8], e: nom::Endianness)
-                         -> Result<(&'a[u8], Vec<Rc<StringData>>), nom::Err<&'a[u8]>> {
-    let mut v = Vec::with_capacity(header.string_ids_size as usize);
-    // Pull out the list of offsets into data block
-    let (buffer, offsets) = parse_u32_list(input, e, header.string_ids_size as usize)?;
-
-    for offset in offsets {
-        // Offsets are given as offset from start of file, not start of data
-        // This should not consume data - offsets must be preserved
-        v.push(Rc::new(parse_string_data_item(&data[offset as usize - header.data_off as usize..])?.1));
-    }
-    Ok((buffer, v))
-}
 
 // Length of uleb128 value is determined by the
 pub fn determine_uleb128_length(input: &[u8]) -> usize {
@@ -335,19 +244,6 @@ pub fn determine_uleb128_length(input: &[u8]) -> usize {
         + 1
 }
 
-named!(parse_string_data_item<&[u8], StringData>,
-    peek!(
-        do_parse!(
-            // uleb128 values are 1-5 bytes long - determine how long it is so we can parse the item
-            uleb_len: peek!(map!(take!(5), determine_uleb128_length))               >>
-            utf16_size: map_res!(take!(uleb_len), read_uleb128)                     >>
-            data: map!(
-                    map_res!(
-                        take_until_and_consume!("\0"), str::from_utf8),
-                    str::to_string)                                                 >>
-            (StringData { utf16_size, data })
-    ))
-);
 
 named!(parse_uleb128<&[u8], u64>,
     do_parse!(
@@ -359,11 +255,11 @@ named!(parse_uleb128<&[u8], u64>,
 
 // nom gives us immutable byte slices, but the leb128 library requires mutable slices
 // No syntactically valid way to convert the two inside the macro so we'll make a wrapper function
-fn read_uleb128(input: &[u8]) -> Result<u64, leb128::read::Error> {
+pub fn read_uleb128(input: &[u8]) -> Result<u64, leb128::read::Error> {
     leb128::read::unsigned(&mut (input.clone()))
 }
 
-named_args!(parse_u32_list(e: nom::Endianness, size: usize)<&[u8], Vec<u32>>, count!(u32!(e), size));
+named_args!(parse_u32_list(size: usize, e: nom::Endianness)<&[u8], Vec<u32>>, count!(u32!(e), size));
 
 // Docs: map_list
 named_args!(parse_map_list(e: nom::Endianness)<&[u8], RawMapList>,
@@ -394,7 +290,7 @@ named_args!(parse_type_list(e: nom::Endianness)<&[u8], RawTypeList>,
 ));
 
 // Docs: proto_id_item
-named_args!(parse_proto_id_item(e: nom::Endianness, size: usize)<&[u8], Vec<RawPrototype>>,
+named_args!(parse_proto_id_items(size: usize, e: nom::Endianness)<&[u8], Vec<RawPrototype>>,
     count!(
         do_parse!(
             shorty_idx: u32!(e)         >>
@@ -405,7 +301,7 @@ named_args!(parse_proto_id_item(e: nom::Endianness, size: usize)<&[u8], Vec<RawP
 );
 
 // Docs: field_id_item
-named_args!(parse_field_id_item(e: nom::Endianness, size: usize)<&[u8], Vec<RawField>>,
+named_args!(parse_field_id_items(size: usize, e: nom::Endianness)<&[u8], Vec<RawField>>,
     count!(
         do_parse!(
             class_idx: u16!(e)                                  >>
@@ -416,7 +312,7 @@ named_args!(parse_field_id_item(e: nom::Endianness, size: usize)<&[u8], Vec<RawF
 );
 
 // Docs: method_id_item
-named_args!(parse_method_id_item(e: nom::Endianness, size: usize)<&[u8], Vec<RawMethod>>,
+named_args!(parse_method_id_items(size: usize, e: nom::Endianness)<&[u8], Vec<RawMethod>>,
     count!(
         do_parse!(
             class_idx: u16!(e)                                  >>
@@ -443,20 +339,20 @@ named_args!(parse_class_def_item(e: nom::Endianness, size: usize)<&[u8], Vec<Raw
         ), size)
 );
 
-named_args!(parse_header(e: nom::Endianness)<&[u8], Header>,
+named_args!(parse_header(e: nom::Endianness)<&[u8], RawHeader>,
     do_parse!(
         // Little bit of magic at the start
         tag!(DEX_FILE_MAGIC)                >>
         // Followed by the version (0380 for example)
         // TODO: convert these to digits and stringify them
         // TODO: just take(4)
-        version: dbg!(count_fixed!(u8, map!(take!(1), |x| { x[0] } ), 4)) >>
+        version: count_fixed!(u8, call!(take_one), 4) >>
         // adler32 checksum of the rest of this DEX file
         // TODO: validate this later
         checksum: u32!(e)                   >>
         // SHA1 signature of the rest of the file
         // TODO: verify this later
-        signature: take!(20)                >>
+        signature: count_fixed!(u8, call!(take_one), 20)                >>
         file_size: u32!(e)                  >>
         header_size: u32!(e)                >>
         endian_tag: u32!(e)                 >>
@@ -479,7 +375,7 @@ named_args!(parse_header(e: nom::Endianness)<&[u8], Header>,
         data_size: u32!(e)                  >>
         data_off: u32!(e)                   >>
 
-        (Header { version, checksum, signature, file_size, header_size, endian_tag, link_size, link_off,
+        (RawHeader { version, checksum, signature, file_size, header_size, endian_tag, link_size, link_off,
          map_off, string_ids_size, string_ids_off, type_ids_size, type_ids_off, proto_ids_size,
          proto_ids_off, field_ids_size, field_ids_off, method_ids_size, method_ids_off, class_defs_size,
          class_defs_off, data_size, data_off })
