@@ -82,7 +82,7 @@ pub fn transform_dex_file<'a>(raw: RawDexFile, e: nom::Endianness) -> Result<Dex
         prototypes: pro,
         fields,
         methods,
-        class_def_items: vec!()
+        class_def_items
     })
 }
 
@@ -123,15 +123,9 @@ fn transform_annotations<'a>(data: &'a[u8], off: usize, data_off: usize, sd: &[R
             let mut fa = vec!();
             // convert raw field annotations to sensible ones
             for rfa in raw_field_annotations {
-                let mut annotations = vec!();
-                let asi = parse_annotation_set_item(&data[rfa.annotations_offset as usize - data_off..], e)?.1;
-                for annot_offset in asi.entries {
-                    annotations.push(parse_annotation_item(&data[annot_offset as usize - data_off..])?.1);
-                }
-
                 fa.push(FieldAnnotation {
                     field_data: fi[rfa.field_idx as usize].clone(),
-                    annotations
+                    annotations: parse_annotations(&data, rfa.annotations_offset as usize, data_off, e)?.1
                 })
             }
             Some(fa)
@@ -143,15 +137,9 @@ fn transform_annotations<'a>(data: &'a[u8], off: usize, data_off: usize, sd: &[R
         Some(raw_method_annotations) => {
             let mut ma = vec!();
             for rma in raw_method_annotations {
-                let mut annotations = vec!();
-                let asi = parse_annotation_set_item(&data[rma.annotations_offset as usize - data_off..], e)?.1;
-                for annot_offset in asi.entries {
-                    annotations.push(parse_annotation_item(&data[annot_offset as usize - data_off..])?.1);
-                }
-
                 ma.push(MethodAnnotation {
                     method: mi[rma.method_idx as usize].clone(),
-                    annotations
+                    annotations: parse_annotations(&data, rma.annotations_offset as usize, data_off, e)?.1
                 })
             }
             Some(ma)
@@ -159,8 +147,25 @@ fn transform_annotations<'a>(data: &'a[u8], off: usize, data_off: usize, sd: &[R
         None => None
     };
 
-    //TODO
-    let parameter_annotations = None;
+    let parameter_annotations = match adi.prm_annot {
+        Some(raw_parameter_annotations) => {
+            let mut pa = vec!();
+            for rpa in raw_parameter_annotations {
+                let asrl = parse_annotation_set_ref_list(&data[rpa.annotations_offset as usize - data_off..], e)?.1;
+
+                for annot_set_offset in asrl.entries {
+                    if annot_set_offset != 0 {
+                        pa.push(Some(ParameterAnnotation {
+                            method: mi[rpa.method_idx as usize].clone(),
+                            annotations: parse_annotations(&data, annot_set_offset as usize, data_off, e)?.1
+                        }))
+                    }
+                }
+            }
+            Some(pa)
+        },
+        None => None
+    };
 
     Ok((data, Annotations {
         class_annotations,
@@ -168,6 +173,15 @@ fn transform_annotations<'a>(data: &'a[u8], off: usize, data_off: usize, sd: &[R
         method_annotations,
         parameter_annotations
     }))
+}
+
+fn parse_annotations(data: &[u8], off: usize, data_off: usize, e: nom::Endianness) -> nom::IResult<&[u8], Vec<AnnotationItem>> {
+    let mut annotations = vec!();
+    let asi = parse_annotation_set_item(&data[off - data_off..], e)?.1;
+    for annot_offset in asi.entries {
+        annotations.push(parse_annotation_item(&data[annot_offset as usize - data_off..])?.1);
+    }
+    Ok((data, annotations))
 }
 
 fn transform_class_defs<'a>(data: &'a[u8], data_off: usize, cdis: &[RawClassDefinition], ti: &[Rc<TypeIdentifier>],
@@ -250,8 +264,22 @@ named!(parse_annotation_item<&[u8], AnnotationItem>,
     )
 );
 
+// Docs: annotation_set_ref_list
+named_args!(parse_annotation_set_ref_list(e: nom::Endianness)<&[u8], RawAnnotationSetRefList>,
+    peek!(
+        do_parse!(
+            size: u32!(e)   >>
+            entries: count!(call!(parse_annotation_set_ref_item, e), size as usize)     >>
+            (RawAnnotationSetRefList { size, entries })
+        )
+    )
+);
+
+// Docs: annotation_set_ref_item
+named_args!(parse_annotation_set_ref_item(e: nom::Endianness)<&[u8], u32>, peek!(u32!(e)));
+
 // Docs: annotation_offset_item
-named_args!(parse_annotation_offset_item(e: nom::Endianness)<&[u8], u32>, u32!(e));
+named_args!(parse_annotation_offset_item(e: nom::Endianness)<&[u8], u32>, peek!(u32!(e)));
 
 // Docs: annotation_set_item
 named_args!(parse_annotation_set_item(e: nom::Endianness)<&[u8], RawAnnotationSetItem>,

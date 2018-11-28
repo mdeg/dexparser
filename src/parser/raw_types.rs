@@ -77,15 +77,6 @@ pub struct RawHeader {
     pub data_off: u32
 }
 
-//static_fields_size 	uleb128 	the number of static fields defined in this item
-//instance_fields_size 	uleb128 	the number of instance fields defined in this item
-//direct_methods_size 	uleb128 	the number of direct methods defined in this item
-//virtual_methods_size 	uleb128 	the number of virtual methods defined in this item
-//static_fields 	encoded_field[static_fields_size] 	the defined static fields, represented as a sequence of encoded elements. The fields must be sorted by field_idx in increasing order.
-//instance_fields 	encoded_field[instance_fields_size] 	the defined instance fields, represented as a sequence of encoded elements. The fields must be sorted by field_idx in increasing order.
-//direct_methods 	encoded_method[direct_methods_size] 	the defined direct (any of static, private, or constructor) methods, represented as a sequence of encoded elements. The methods must be sorted by method_idx in increasing order.
-//virtual_methods 	encoded_method[virtual_methods_size] 	the defined virtual (none of static, private, or constructor) methods, represented as a sequence of encoded elements. This list should not include inherited methods unless overridden by the class that this item represents. The methods must be sorted by method_idx in increasing order. The method_idx of a virtual method must not be the same as any direct method.
-
 #[derive(Debug)]
 pub struct RawClassDataItem {
     pub static_fields_size: u64,
@@ -97,10 +88,6 @@ pub struct RawClassDataItem {
     pub direct_methods: Vec<RawEncodedMethod>,
     pub virtual_methods: Vec<RawEncodedMethod>
 }
-
-
-//field_idx_diff 	uleb128 	index into the field_ids list for the identity of this field (includes the name and descriptor), represented as a difference from the index of previous element in the list. The index of the first element in a list is represented directly.
-//access_flags 	uleb128 	access flags for the field (public, final, etc.). See "access_flags Definitions" for details.
 
 #[derive(Debug)]
 pub struct RawEncodedField {
@@ -114,10 +101,6 @@ pub struct RawEncodedMethod {
     pub access_flags: u64,
     pub code_off: u64
 }
-
-//method_idx_diff 	uleb128 	index into the method_ids list for the identity of this method (includes the name and descriptor), represented as a difference from the index of previous element in the list. The index of the first element in a list is represented directly.
-//access_flags 	uleb128 	access flags for the method (public, final, etc.). See "access_flags Definitions" for details.
-//code_off 	uleb128 	offset from the start of the file to the code structure for this method, or 0 if this method is either abstract or native. The offset should be to a location in the data section. The format of the data is specified by "code_item" below.
 
 #[derive(Debug)]
 pub struct RawAnnotations {
@@ -162,6 +145,16 @@ pub struct RawAnnotationSetItem {
     pub size: u32,
     // List of offsets to annotations
     // Docs: annotation_off_item
+    pub entries: Vec<u32>
+}
+
+// Docs: annotation_set_ref_list
+#[derive(Debug)]
+pub struct RawAnnotationSetRefList {
+    // Size of the following list
+    pub size: u32,
+    // List of offsets to annotation items
+    // Docs: annotation_set_ref_item
     pub entries: Vec<u32>
 }
 

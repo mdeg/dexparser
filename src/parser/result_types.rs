@@ -17,7 +17,6 @@ pub struct Header {
     pub version: String,
     pub checksum: String,
     pub signature: [u8; 20],
-//    pub signature: String,
     pub file_size: u32,
     pub endianness: nom::Endianness
 }
@@ -55,6 +54,7 @@ pub struct Prototype {
 impl fmt::Display for Prototype {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if let Some(p) = &self.parameters {
+            // TODO
             write!(f, "shorty: {}\nreturn type: {}\n parameters: {}", self.shorty, self.return_type, "TODO")
         } else {
             write!(f, "shorty: {}\nreturn type: {}\n parameters: -", self.shorty, self.return_type)
@@ -117,7 +117,7 @@ pub struct Annotations {
     pub class_annotations: Option<Vec<ClassAnnotation>>,
     pub field_annotations: Option<Vec<FieldAnnotation>>,
     pub method_annotations: Option<Vec<MethodAnnotation>>,
-    pub parameter_annotations: Option<Vec<ParameterAnnotation>>
+    pub parameter_annotations: Option<Vec<Option<ParameterAnnotation>>>
 }
 
 #[derive(Debug)]
@@ -197,6 +197,7 @@ impl fmt::Display for Visibility {
 }
 
 //noinspection RsEnumVariantNaming
+#[allow(non_camel_case_types)]
 #[derive(PartialEq, Debug)]
 pub enum AccessFlag {
     ACC_PUBLIC,

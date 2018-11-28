@@ -99,7 +99,7 @@ pub fn read_uleb128(input: &[u8]) -> Result<u64, leb128::read::Error> {
 named_args!(parse_u32_list(size: usize, e: nom::Endianness)<&[u8], Vec<u32>>, count!(u32!(e), size));
 
 // Docs: map_list
-fn parse_map_list<'a>(input: &[u8], data: &'a[u8], e: nom::Endianness) -> nom::IResult<&'a[u8], RawMapList> {
+fn parse_map_list<'a>(_: &[u8], data: &'a[u8], e: nom::Endianness) -> nom::IResult<&'a[u8], RawMapList> {
     do_parse!(data,
         size: u32!(e)                                           >>
         list: count!(do_parse!(
