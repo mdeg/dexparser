@@ -225,27 +225,28 @@ pub struct RawMethodHandleItem {
     pub unused_2: u16
 }
 
-// TODO: change casing
+//noinspection RsEnumVariantNaming
+#[allow(non_camel_case_types)]
 #[derive(Debug, PartialEq)]
 pub enum MapListItemType {
-    HeaderItem,
-    StringIdItem,
-    TypeIdItem,
-    ProtoIdItem,
-    FieldIdItem,
-    MethodIdItem,
-    ClassDefItem,
-    CallSiteIdItem,
-    MethodHandleItem,
-    MapList,
-    TypeList,
-    AnnotationSetRefList,
-    AnnotationSetItem,
-    ClassDataItem,
-    CodeItem,
-    StringDataItem,
-    DebugInfoItem,
-    AnnotationItem,
-    EncodedArrayItem,
-    AnnotationsDirectoryItem
+    HEADER_ITEM,
+    STRING_ID_ITEM,
+    TYPE_ID_ITEM,
+    PROTO_ID_ITEM,
+    FIELD_ID_ITEM,
+    METHOD_ID_ITEM,
+    CLASS_DEF_ITEM,
+    CALL_SITE_ID_ITEM,
+    METHOD_HANDLE_ITEM,
+    MAP_LIST,
+    TYPE_LIST,
+    ANNOTATION_SET_REF_LIST,
+    ANNOTATION_SET_ITEM,
+    CLASS_DATA_ITEM,
+    CODE_ITEM,
+    STRING_DATA_ITEM,
+    DEBUG_INFO_ITEM,
+    ANNOTATION_ITEM,
+    ENCODED_ARRAY_ITEM,
+    ANNOTATIONS_DIRECTORY_ITEM
 }

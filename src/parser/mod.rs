@@ -62,8 +62,8 @@ fn parse_dex_file(input: &[u8], e: nom::Endianness) -> Result<(&[u8], RawDexFile
         field_id_items: dbg!(call!(parse_field_id_items, header.field_ids_size as usize, e))    >>
         method_id_items: dbg!(call!(parse_method_id_items, header.method_ids_size as usize, e))  >>
         class_def_items: dbg!(call!(parse_class_def_items, header.class_defs_size as usize, e)) >>
-        call_site_idxs: dbg!(cond!(map_list.is_some(), call!(parse_u32_list, map_list.as_ref().unwrap().list.iter().filter(|item| item.type_ == MapListItemType::CallSiteIdItem).count(), e))) >>
-        method_handle_idxs: dbg!(cond!(map_list.is_some(), call!(parse_method_handle_items, map_list.as_ref().unwrap().list.iter().filter(|item| item.type_  == MapListItemType::MethodHandleItem).count(), e)))   >>
+        call_site_idxs: dbg!(cond!(map_list.is_some(), call!(parse_u32_list, map_list.as_ref().unwrap().list.iter().filter(|item| item.type_ == MapListItemType::CALL_SITE_ID_ITEM).count(), e))) >>
+        method_handle_idxs: dbg!(cond!(map_list.is_some(), call!(parse_method_handle_items, map_list.as_ref().unwrap().list.iter().filter(|item| item.type_  == MapListItemType::METHOD_HANDLE_ITEM).count(), e)))   >>
         data: dbg!(map!(take!(header.data_size), |d| { d.to_vec() }))  >>
         link_data: cond!(header.link_off > 0, dbg!(map!(eof!(), |ld| { ld.to_vec() })))   >>
         (RawDexFile { header, string_id_items, type_id_items, proto_id_items, field_id_items,
@@ -291,26 +291,26 @@ impl Visibility {
 impl MapListItemType {
     fn parse(value: u16) -> Result<Self, ParserErr> {
         match value {
-            0x0000 => Ok(MapListItemType::HeaderItem),
-            0x0001 => Ok(MapListItemType::StringIdItem),
-            0x0002 => Ok(MapListItemType::TypeIdItem),
-            0x0003 => Ok(MapListItemType::ProtoIdItem),
-            0x0004 => Ok(MapListItemType::FieldIdItem),
-            0x0005 => Ok(MapListItemType::MethodIdItem),
-            0x0006 => Ok(MapListItemType::ClassDefItem),
-            0x0007 => Ok(MapListItemType::CallSiteIdItem),
-            0x0008 => Ok(MapListItemType::MethodHandleItem),
-            0x1000 => Ok(MapListItemType::MapList),
-            0x1001 => Ok(MapListItemType::TypeList),
-            0x1002 => Ok(MapListItemType::AnnotationSetRefList),
-            0x1003 => Ok(MapListItemType::AnnotationSetItem),
-            0x2000 => Ok(MapListItemType::ClassDataItem),
-            0x2001 => Ok(MapListItemType::CodeItem),
-            0x2002 => Ok(MapListItemType::StringDataItem),
-            0x2003 => Ok(MapListItemType::DebugInfoItem),
-            0x2004 => Ok(MapListItemType::AnnotationItem),
-            0x2005 => Ok(MapListItemType::EncodedArrayItem),
-            0x2006 => Ok(MapListItemType::AnnotationsDirectoryItem),
+            0x0000 => Ok(MapListItemType::HEADER_ITEM),
+            0x0001 => Ok(MapListItemType::STRING_ID_ITEM),
+            0x0002 => Ok(MapListItemType::TYPE_ID_ITEM),
+            0x0003 => Ok(MapListItemType::PROTO_ID_ITEM),
+            0x0004 => Ok(MapListItemType::FIELD_ID_ITEM),
+            0x0005 => Ok(MapListItemType::METHOD_ID_ITEM),
+            0x0006 => Ok(MapListItemType::CLASS_DEF_ITEM),
+            0x0007 => Ok(MapListItemType::CALL_SITE_ID_ITEM),
+            0x0008 => Ok(MapListItemType::METHOD_HANDLE_ITEM),
+            0x1000 => Ok(MapListItemType::MAP_LIST),
+            0x1001 => Ok(MapListItemType::TYPE_LIST),
+            0x1002 => Ok(MapListItemType::ANNOTATION_SET_REF_LIST),
+            0x1003 => Ok(MapListItemType::ANNOTATION_SET_ITEM),
+            0x2000 => Ok(MapListItemType::CLASS_DATA_ITEM),
+            0x2001 => Ok(MapListItemType::CODE_ITEM),
+            0x2002 => Ok(MapListItemType::STRING_DATA_ITEM),
+            0x2003 => Ok(MapListItemType::DEBUG_INFO_ITEM),
+            0x2004 => Ok(MapListItemType::ANNOTATION_ITEM),
+            0x2005 => Ok(MapListItemType::ENCODED_ARRAY_ITEM),
+            0x2006 => Ok(MapListItemType::ANNOTATIONS_DIRECTORY_ITEM),
             _ => Err(ParserErr::from(format!("No type code found for map list item 0x{:0X}", value)))
         }
     }
