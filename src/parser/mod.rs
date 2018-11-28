@@ -400,4 +400,10 @@ impl AccessFlag {
 
         v
     }
+
+    // Some access flags are stored as uleb128, which parses down to an unsigned 64-bit integer
+    // Access flags are only encoded in u32 so we're safe to truncate
+    fn parse_from_u64(value: u64, type_: AnnotationType) -> Vec<Self> {
+        Self::parse(value as u32, type_)
+    }
 }

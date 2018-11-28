@@ -131,15 +131,15 @@ pub struct ClassData {
 
 #[derive(Debug)]
 pub struct EncodedField {
-    field: Rc<Field>,
-    access_flags: Vec<AccessFlag>
+    pub field: Rc<Field>,
+    pub access_flags: Vec<AccessFlag>
 }
 
 #[derive(Debug)]
 pub struct EncodedMethod {
-    method: Rc<Method>,
-    access_flags: Vec<AccessFlag>,
-    code: Code
+    pub method: Rc<Method>,
+    pub access_flags: Vec<AccessFlag>,
+    pub code: Code
 }
 
 #[derive(Debug)]

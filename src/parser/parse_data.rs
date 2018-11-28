@@ -229,9 +229,8 @@ fn transform_class_defs<'a>(data: &'a[u8], data_off: usize, cdis: &[RawClassDefi
         } else {
             let class_data = parse_class_data_item(&data[cdi.class_data_off as usize - data_off..], e)?.1;
 
-            let static_fields = vec!();
-
-            let instance_fields = vec!();
+            let static_fields = transform_encoded_fields(&class_data.static_fields, &fi);
+            let instance_fields = transform_encoded_fields(&class_data.static_fields, &fi);
 
             let direct_methods = vec!();
 
@@ -247,6 +246,23 @@ fn transform_class_defs<'a>(data: &'a[u8], data_off: usize, cdis: &[RawClassDefi
     }
 
     Ok((data, v))
+}
+
+// Encoded fields are stored sequentially, with each index in the raw encoded field being the *diff*
+// of the index (not the total index) from the previous entry
+fn transform_encoded_fields(raw: &[RawEncodedField], fi: &[Rc<Field>]) -> Vec<EncodedField> {
+    let mut fields = vec!();
+    // The first entry effectively has an offset of 0
+    let mut prev_offset = 0;
+    // Subsequent entry indexes are offsets of the previous entry index
+    for field in raw {
+        fields.push(EncodedField {
+            field: fi[(prev_offset + field.field_idx_diff) as usize].clone(),
+            access_flags: AccessFlag::parse_from_u64(field.access_flags, AnnotationType::Field)
+        });
+        prev_offset = field.field_idx_diff;
+    }
+    fields
 }
 
 // Docs: string_data
@@ -323,22 +339,18 @@ named_args!(parse_class_data_item(e: nom::Endianness)<&[u8], RawClassDataItem>,
 );
 
 named!(parse_encoded_field<&[u8], RawEncodedField>,
-    peek!(
-        do_parse!(
-            field_idx_diff: call!(parse_uleb128)    >>
-            access_flags: call!(parse_uleb128)  >>
-            (RawEncodedField { field_idx_diff, access_flags })
-        )
+    do_parse!(
+        field_idx_diff: call!(parse_uleb128)    >>
+        access_flags: call!(parse_uleb128)  >>
+        (RawEncodedField { field_idx_diff, access_flags })
     )
 );
 
 named!(parse_encoded_method<&[u8], RawEncodedMethod>,
-    peek!(
-        do_parse!(
-            method_idx_diff: call!(parse_uleb128)   >>
-            access_flags: call!(parse_uleb128)  >>
-            code_off: call!(parse_uleb128)  >>
-            (RawEncodedMethod { method_idx_diff, access_flags, code_off })
-        )
+    do_parse!(
+        method_idx_diff: call!(parse_uleb128)   >>
+        access_flags: call!(parse_uleb128)  >>
+        code_off: call!(parse_uleb128)  >>
+        (RawEncodedMethod { method_idx_diff, access_flags, code_off })
     )
 );
