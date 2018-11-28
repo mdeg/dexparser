@@ -8,7 +8,7 @@ pub struct DexFile {
     pub type_identifiers: Vec<Rc<TypeIdentifier>>,
     pub prototypes: Vec<Rc<Prototype>>,
     pub fields: Vec<Rc<Field>>,
-    pub methods: Vec<Method>,
+    pub methods: Vec<Rc<Method>>,
     pub class_def_items: Vec<ClassDefinition>
 }
 
@@ -115,8 +115,9 @@ pub struct ClassDefinition {
 #[derive(Debug)]
 pub struct Annotations {
     pub class_annotations: Option<Vec<ClassAnnotation>>,
-    pub field_annotations: Option<Vec<FieldAnnotation>>
-    // TODO
+    pub field_annotations: Option<Vec<FieldAnnotation>>,
+    pub method_annotations: Option<Vec<MethodAnnotation>>,
+    pub parameter_annotations: Option<Vec<ParameterAnnotation>>
 }
 
 #[derive(Debug)]
@@ -135,6 +136,18 @@ pub struct EncodedField {
 #[derive(Debug)]
 pub struct EncodedMethod {
 
+}
+
+#[derive(Debug)]
+pub struct MethodAnnotation {
+    pub method: Rc<Method>,
+    pub annotations: Vec<AnnotationItem>
+}
+
+#[derive(Debug)]
+pub struct ParameterAnnotation {
+    pub method: Rc<Method>,
+    pub annotations: Vec<AnnotationItem>
 }
 
 #[derive(Debug)]

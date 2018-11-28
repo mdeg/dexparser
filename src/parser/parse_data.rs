@@ -66,14 +66,14 @@ pub fn transform_dex_file<'a>(raw: RawDexFile, e: nom::Endianness) -> Result<Dex
         })).collect::<Vec<_>>();
 
     let methods = raw.method_id_items.into_iter()
-        .map(|i| Method {
+        .map(|i| Rc::new(Method {
             definer: ti[i.class_idx as usize].clone(),
             prototype: pro[i.proto_idx as usize].clone(),
             name: sd[i.name_idx as usize].clone()
-        }).collect();
+        })).collect::<Vec<_>>();
 
     let class_def_items = transform_class_defs(&raw.data, off, &raw.class_def_items, &ti, &sd,
-                                               &fields, header.endianness)?.1;
+                                               &fields, &methods, header.endianness)?.1;
 
     Ok(DexFile {
         header,
@@ -86,8 +86,9 @@ pub fn transform_dex_file<'a>(raw: RawDexFile, e: nom::Endianness) -> Result<Dex
     })
 }
 
-fn transform_annotations<'a>(data: &'a[u8], off: usize, data_off: usize, sd: &[Rc<StringData>], ti: &[Rc<TypeIdentifier>],
-                             fi: &[Rc<Field>], e: nom::Endianness) -> nom::IResult<&'a[u8], Annotations> {
+fn transform_annotations<'a>(data: &'a[u8], off: usize, data_off: usize, sd: &[Rc<StringData>],
+                             ti: &[Rc<TypeIdentifier>], fi: &[Rc<Field>], mi: &[Rc<Method>],
+                             e: nom::Endianness) -> nom::IResult<&'a[u8], Annotations> {
 
     let adi = parse_annotations_directory_item(&data[off - data_off..], e)?.1;
 
@@ -138,18 +139,41 @@ fn transform_annotations<'a>(data: &'a[u8], off: usize, data_off: usize, sd: &[R
         None => None
     };
 
-    // todo: method, parameter annotations
+    let method_annotations = match adi.mtd_annot {
+        Some(raw_method_annotations) => {
+            let mut ma = vec!();
+            for rma in raw_method_annotations {
+                let mut annotations = vec!();
+                let asi = parse_annotation_set_item(&data[rma.annotations_offset as usize - data_off..], e)?.1;
+                for annot_offset in asi.entries {
+                    annotations.push(parse_annotation_item(&data[annot_offset as usize - data_off..])?.1);
+                }
+
+                ma.push(MethodAnnotation {
+                    method: mi[rma.method_idx as usize].clone(),
+                    annotations
+                })
+            }
+            Some(ma)
+        },
+        None => None
+    };
 
     //TODO
+    let parameter_annotations = None;
+
     Ok((data, Annotations {
         class_annotations,
-        field_annotations
+        field_annotations,
+        method_annotations,
+        parameter_annotations
     }))
-
 }
 
 fn transform_class_defs<'a>(data: &'a[u8], data_off: usize, cdis: &[RawClassDefinition], ti: &[Rc<TypeIdentifier>],
-                            sd: &[Rc<StringData>], fi: &[Rc<Field>], e: nom::Endianness) -> nom::IResult<&'a[u8], Vec<ClassDefinition>> {
+                            sd: &[Rc<StringData>], fi: &[Rc<Field>], mtd: &[Rc<Method>],
+                            e: nom::Endianness) -> nom::IResult<&'a[u8], Vec<ClassDefinition>> {
+
     let mut v = Vec::with_capacity(cdis.len());
 
     for cdi in cdis {
@@ -177,7 +201,7 @@ fn transform_class_defs<'a>(data: &'a[u8], data_off: usize, cdis: &[RawClassDefi
         let annotations = if cdi.annotations_off == 0 {
             None
         } else {
-            Some(transform_annotations(&data, cdi.annotations_off as usize, data_off, &sd, &ti, &fi, e)?.1)
+            Some(transform_annotations(&data, cdi.annotations_off as usize, data_off, &sd, &ti, &fi, &mtd, e)?.1)
         };
 
         let source_file_name = if cdi.source_file_idx == NO_INDEX {
