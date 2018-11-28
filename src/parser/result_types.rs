@@ -16,7 +16,8 @@ pub struct DexFile {
 pub struct Header {
     pub version: String,
     pub checksum: String,
-    pub signature: String,
+    pub signature: [u8; 20],
+//    pub signature: String,
     pub file_size: u32,
     pub endianness: nom::Endianness
 }

@@ -9,7 +9,6 @@ use self::raw_types::*;
 use self::error::*;
 use nom::*;
 use std::str;
-use std::rc::Rc;
 
 // The magic that starts a DEX file
 const DEX_FILE_MAGIC: [u8; 4] = [0x64, 0x65, 0x78, 0x0a];
@@ -49,177 +48,27 @@ named_args!(parse_string_id_items(size: usize, e: nom::Endianness)<&[u8], Vec<u3
     call!(parse_u32_list, size, e)
 );
 
-named_args!(parse_dex_file(e: nom::Endianness)<&[u8], RawDexFile>,
-    do_parse!(
+// TODO: conds for string id, type id, etc
+fn parse_dex_file(input: &[u8], e: nom::Endianness) -> Result<(&[u8], RawDexFile), nom::Err<&[u8]>> {
+    do_parse!(input,
         header: call!(parse_header, e) >>
-        // TODO: map lisT?
-        string_id_items: call!(parse_string_id_items, header.string_ids_size as usize, e) >>
-        type_id_items: call!(parse_u32_list, header.type_ids_size as usize, e)  >>
-        proto_id_items: call!(parse_proto_id_items, header.proto_ids_size as usize, e) >>
-        field_id_items: call!(parse_field_id_items, header.field_ids_size as usize, e)    >>
-        method_id_items: call!(parse_method_id_items, header.method_ids_size as usize, e)  >>
-
-        (RawDexFile { header, string_id_items, type_id_items, proto_id_items,
-         field_id_items, method_id_items })
+        // Version 038 adds some new index pools with sizes not indicated in the header
+        // For this version and higher, we'll need to peek at the map list to know their size for parsing
+        // TODO: versioning
+        map_list: cond!(true, peek!(call!(parse_map_list, &input[header.map_off as usize - (header.file_size as usize - input.len()) ..], e)))    >>
+        string_id_items: dbg!(call!(parse_string_id_items, header.string_ids_size as usize, e)) >>
+        type_id_items: dbg!(call!(parse_u32_list, header.type_ids_size as usize, e))  >>
+        proto_id_items: dbg!(call!(parse_proto_id_items, header.proto_ids_size as usize, e)) >>
+        field_id_items: dbg!(call!(parse_field_id_items, header.field_ids_size as usize, e))    >>
+        method_id_items: dbg!(call!(parse_method_id_items, header.method_ids_size as usize, e))  >>
+        class_def_items: dbg!(call!(parse_class_def_items, header.class_defs_size as usize, e)) >>
+        call_site_idxs: dbg!(cond!(map_list.is_some(), call!(parse_u32_list, map_list.as_ref().unwrap().list.iter().filter(|item| item.type_ == MapListItemType::CallSiteIdItem).count(), e))) >>
+        method_handle_idxs: dbg!(cond!(map_list.is_some(), call!(parse_method_handle_items, map_list.as_ref().unwrap().list.iter().filter(|item| item.type_  == MapListItemType::MethodHandleItem).count(), e)))   >>
+        data: dbg!(map!(take!(header.data_size), |d| { d.to_vec() }))  >>
+        link_data: cond!(header.link_off > 0, dbg!(map!(eof!(), |ld| { ld.to_vec() })))   >>
+        (RawDexFile { header, string_id_items, type_id_items, proto_id_items, field_id_items,
+            method_id_items, class_def_items, call_site_idxs, method_handle_idxs, data, link_data })
     )
-);
-
-//fn parse_dex_file(buffer: &[u8], e: nom::Endianness) -> Result<DexFile, ParserErr> {
-//    let (buffer, header) = parse_header(buffer, e)?;
-//
-//    // Version 038 adds some new index pools with sizes not indicated in the header
-//    // Need to peek at this a bit early so we know how big some of the index pools are
-//    // Very inconvenient!
-//    let (_, map_list) = parse_map_list(&buffer[(header.map_off - header.header_size) as usize ..], e)?;
-//
-//    // Peek ahead and pull out the data segment
-//    let (_, data) = take!(&buffer[header.data_off as usize - header.header_size as usize .. ], header.data_size)?;
-//
-//    // Pull out string data objects
-//    let (buffer, string_data_items) = parse_string_data(&buffer[..], &header, &data, e)?;
-//
-//    let (buffer, type_id_data_items) = parse_type_data(&buffer, e, header.type_ids_size as usize, &string_data_items)?;
-//
-//    let (buffer, proto_id_data_items) = parse_prototype_data(&buffer, &data, &string_data_items, &type_id_data_items,
-//                                                             header.proto_ids_size as usize, header.data_off as usize, e)?;
-//
-//    let (buffer, field_data_items) = parse_field_data(&buffer, &string_data_items, &type_id_data_items, header.field_ids_size as usize, e)?;
-//
-//    let (buffer, method_data_items) = parse_method_data(&buffer, &string_data_items, &type_id_data_items, &proto_id_data_items, header.method_ids_size as usize, e)?;
-//
-//    let (buffer, class_def_items) = parse_class_defs(&buffer, &type_id_data_items, &string_data_items, &field_data_items, &data, header.data_off as usize, header.class_defs_size as usize, e)?;
-//
-//    let call_site_idxs = parse_u32_list(buffer, e,
-//                                        map_list.list.iter().filter(|item| item.type_ == MapListItemType::CallSiteIdItem).count());
-//
-//    let method_handle_items_idxs = parse_u32_list(buffer, e,
-//                                        map_list.list.iter().filter(|item| item.type_  == MapListItemType::MethodHandleItem).count());
-//
-//    Ok(DexFile {
-//        header,
-//        string_data_items,
-//        type_id_data_items,
-//        proto_id_data_items,
-//        field_data_items,
-//        method_data_items,
-//        class_def_items
-//    })
-//}
-
-fn parse_class_defs<'a>(input: &'a[u8], tidi: &[Rc<TypeIdentifier>], sdi: &[Rc<StringData>],
-                        fdi: &[Rc<Field>], data: &'a[u8], data_offset: usize, size: usize, e: nom::Endianness)
-                        -> Result<(&'a[u8], Vec<ClassDefinition>), nom::Err<&'a[u8]>> {
-    let mut v = Vec::with_capacity(size);
-    let (buffer, class_def_items) = parse_class_def_item(&input, e, size)?;
-    for class_def_item in class_def_items {
-        let class_type = tidi[class_def_item.class_idx as usize].clone();
-
-        let access_flags = AccessFlag::parse(class_def_item.access_flags, AnnotationType::Class);
-
-        let superclass = if class_def_item.superclass_idx == NO_INDEX {
-            None
-        } else {
-            Some(tidi[class_def_item.superclass_idx as usize].clone())
-        };
-
-        let interfaces = if class_def_item.interfaces_off == 0 {
-            None
-        } else {
-            Some(parse_type_list(&data[class_def_item.interfaces_off as usize - data_offset..], e)?
-                .1
-                .list
-                .into_iter()
-                .map(|idx| tidi[idx as usize].clone())
-                .collect())
-        };
-
-        let source_file_name = if class_def_item.source_file_idx == NO_INDEX {
-            None
-        } else {
-            Some(sdi[class_def_item.source_file_idx as usize].clone())
-        };
-
-        // class_def_item contains an offset to the start of the annotations structure
-        let annotations = if class_def_item.annotations_off == 0 {
-            None
-        } else {
-            let adi_offset = class_def_item.annotations_off as usize - data_offset;
-            let (_, adi) = parse_annotations_directory_item(&data[adi_offset..], e)?;
-            let class_annotations = if adi.class_annotations_off == 0 {
-                None
-            } else {
-                let (_, set_item) = parse_annotation_set_item(
-                    &data[adi.class_annotations_off as usize - data_offset..], e)?;
-
-                let mut class_annotations = vec!();
-                // Each entry here is an offset to an annotation_item in the data pool
-                for annotation_offset in set_item.entries {
-                    // Every annotation item contains a visibility, a type and an annotation
-                    let (_, annotation_item) = parse_annotation_item(&data[annotation_offset as usize - data_offset..])?;
-
-                    class_annotations.push(ClassAnnotation {
-                        visibility: annotation_item.visibility,
-                        type_: tidi[annotation_item.annotation.type_idx as usize].clone(),
-                        elements: annotation_item.annotation.elements.into_iter().map(|item| {
-                            AnnotationElement {
-                                name: sdi[item.name_idx as usize].clone(),
-                                value: item.value
-                            }
-                        }).collect()
-                    });
-                }
-
-                Some(class_annotations)
-            };
-
-            let field_annotations = match adi.fld_annot {
-                Some(raw_field_annotations) => {
-                    let mut fa = vec!();
-                    // convert raw field annotations to sensible ones
-                    for rfa in raw_field_annotations {
-                        let field_data = fdi[rfa.field_idx as usize].clone();
-
-                        let (_, asi) = parse_annotation_set_item(&data[rfa.annotations_offset as usize - data_offset..], e)?;
-
-                        let mut annotations = vec!();
-                        for annot_offset in asi.entries {
-                            let (_, ai) = parse_annotation_item(&data[annot_offset as usize - data_offset..])?;
-                            annotations.push(ai);
-                        }
-
-                        fa.push(FieldAnnotation {
-                            field_data,
-                            annotations
-                        })
-                    }
-                    Some(fa)
-                },
-                None => None
-            } ;
-
-
-            // todo: method, parameter annotations
-
-
-            //TODO
-            Some(Annotations {
-                class_annotations,
-                field_annotations
-            })
-        };
-
-        let class_data = None;
-//        if adi.class_data_off = 0 {
-//            let (_, class_data) = parse_class_data_item(&data[- data_offset]);
-//        }
-
-        v.push(ClassDefinition {
-            class_type, access_flags, superclass,
-            interfaces, source_file_name, annotations,
-            class_data });
-    }
-
-    Ok((buffer, v))
 }
 
 // Docs: annotation_item
@@ -235,7 +84,6 @@ named!(parse_annotation_item<&[u8], AnnotationItem>,
 
 named!(take_one<&[u8], u8>, map!(take!(1), |x| { x[0] }));
 
-
 // Length of uleb128 value is determined by the
 pub fn determine_uleb128_length(input: &[u8]) -> usize {
     input.iter()
@@ -243,7 +91,6 @@ pub fn determine_uleb128_length(input: &[u8]) -> usize {
         .count()
         + 1
 }
-
 
 named!(parse_uleb128<&[u8], u64>,
     do_parse!(
@@ -262,22 +109,20 @@ pub fn read_uleb128(input: &[u8]) -> Result<u64, leb128::read::Error> {
 named_args!(parse_u32_list(size: usize, e: nom::Endianness)<&[u8], Vec<u32>>, count!(u32!(e), size));
 
 // Docs: map_list
-named_args!(parse_map_list(e: nom::Endianness)<&[u8], RawMapList>,
-    peek!(
-        do_parse!(
-            size: u32!(e)                                           >>
-            list: count!(do_parse!(
-                    type_: map_res!(u16!(e), MapListItemType::parse)    >>
-                    unused: u16!(e)                                 >>
-                    size: u32!(e)                                   >>
-                    offset: u32!(e)                                 >>
-                    (RawMapListItem { type_, unused, size, offset })
-                ), size as usize)                                   >>
+fn parse_map_list<'a>(input: &[u8], data: &'a[u8], e: nom::Endianness) -> nom::IResult<&'a[u8], RawMapList> {
+    do_parse!(data,
+        size: u32!(e)                                           >>
+        list: count!(do_parse!(
+                type_: map_res!(u16!(e), MapListItemType::parse)    >>
+                unused: u16!(e)                                 >>
+                size: u32!(e)                                   >>
+                offset: u32!(e)                                 >>
+                (RawMapListItem { type_, unused, size, offset })
+            ), size as usize)                                   >>
 
-            (RawMapList { size, list })
-        )
+        (RawMapList { size, list })
     )
-);
+}
 
 // Docs: type_list
 named_args!(parse_type_list(e: nom::Endianness)<&[u8], RawTypeList>,
@@ -322,7 +167,7 @@ named_args!(parse_method_id_items(size: usize, e: nom::Endianness)<&[u8], Vec<Ra
         ), size)
 );
 
-named_args!(parse_class_def_item(e: nom::Endianness, size: usize)<&[u8], Vec<RawClassDefinition>>,
+named_args!(parse_class_def_items(size: usize, e: nom::Endianness)<&[u8], Vec<RawClassDefinition>>,
     count!(
         do_parse!(
             class_idx: u32!(e)                  >>
@@ -437,6 +282,17 @@ named_args!(parse_annotation_set_item(e: nom::Endianness)<&[u8], RawAnnotationSe
 // Docs: annotation_offset_item
 named_args!(parse_annotation_offset_item(e: nom::Endianness)<&[u8], u32>, u32!(e));
 
+// Docs: method_handle_item
+named_args!(parse_method_handle_items(size: usize, e: nom::Endianness)<&[u8], Vec<RawMethodHandleItem>>,
+    count!(
+        do_parse!(
+            type_: u16!(e) >>
+            unused_1: u16!(e) >>
+            field_or_method_id: u16!(e) >>
+            unused_2: u16!(e)   >>
+            (RawMethodHandleItem { type_, unused_1, field_or_method_id, unused_2 })
+    ), size)
+);
 //=============================
 #[derive(Debug, PartialEq)]
 enum AnnotationType {
@@ -564,7 +420,7 @@ impl AccessFlag {
             v.push(AccessFlag::ACC_DECLARED_SYNCHRONIZED);
         }
 
-        // TODO: some kind of assert here
+        // TODO: some kind of assert here - use count_1s
 
         v
     }

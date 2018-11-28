@@ -2,7 +2,7 @@
 //
 #[derive(Debug)]
 pub struct RawDexFile {
-    // Docs: header
+    // Docs: header_item
     pub header: RawHeader,
     // Docs: string_id_item
     pub string_id_items: Vec<u32>,
@@ -13,7 +13,18 @@ pub struct RawDexFile {
     // Docs: field_id_item
     pub field_id_items: Vec<RawField>,
     // Docs: method_id_item
-    pub method_id_items: Vec<RawMethod>
+    pub method_id_items: Vec<RawMethod>,
+    // Docs: class_def_item
+    pub class_def_items: Vec<RawClassDefinition>,
+    // Docs: call_site_item
+    // New in version 03x
+    pub call_site_idxs: Option<Vec<u32>>,
+    // Docs: method_handle_item
+    pub method_handle_idxs: Option<Vec<RawMethodHandleItem>>,
+    // Docs: data
+    pub data: Vec<u8>,
+    // Docs: link_data
+    pub link_data: Option<Vec<u8>>
 }
 
 #[derive(Debug)]
@@ -60,7 +71,7 @@ pub struct RawHeader {
     pub class_defs_size: u32,
     // Offset class definitions begin at
     pub class_defs_off: u32,
-    // Size of the 'data' blob
+    // Size of the 'data' blob in bytes
     pub data_size: u32,
     // Offset the 'data' blob begins at
     pub data_off: u32
@@ -212,6 +223,16 @@ pub struct RawMapListItem {
     pub size: u32,
     pub offset: u32
 }
+
+// Docs: method_handle_item
+#[derive(Debug)]
+pub struct RawMethodHandleItem {
+    pub type_: u16,
+    pub unused_1: u16,
+    pub field_or_method_id: u16,
+    pub unused_2: u16
+}
+
 
 #[derive(Debug, PartialEq)]
 pub enum MapListItemType {
