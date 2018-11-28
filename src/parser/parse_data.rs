@@ -63,7 +63,7 @@ pub fn transform_dex_file<'a>(raw: RawDexFile, e: nom::Endianness) -> Result<Dex
             definer: ti[i.class_idx as usize].clone(),
             type_: ti[i.type_idx as usize].clone(),
             name: sd[i.name_idx as usize].clone()
-        })).collect();
+        })).collect::<Vec<_>>();
 
     let methods = raw.method_id_items.into_iter()
         .map(|i| Method {
@@ -71,6 +71,9 @@ pub fn transform_dex_file<'a>(raw: RawDexFile, e: nom::Endianness) -> Result<Dex
             prototype: pro[i.proto_idx as usize].clone(),
             name: sd[i.name_idx as usize].clone()
         }).collect();
+
+    let class_def_items = transform_class_defs(&raw.data, off, &raw.class_def_items, &ti, &sd,
+                                               &fields, header.endianness)?.1;
 
     Ok(DexFile {
         header,
@@ -83,124 +86,121 @@ pub fn transform_dex_file<'a>(raw: RawDexFile, e: nom::Endianness) -> Result<Dex
     })
 }
 
-//
-//fn parse_class_defs<'a>(input: &'a[u8], tidi: &[Rc<TypeIdentifier>], sdi: &[Rc<StringData>],
-//                        fdi: &[Rc<Field>], data: &'a[u8], data_offset: usize, size: usize, e: nom::Endianness)
-//                        -> Result<(&'a[u8], Vec<ClassDefinition>), nom::Err<&'a[u8]>> {
-//    let mut v = Vec::with_capacity(size);
-//    let (buffer, class_def_items) = parse_class_def_item(&input, e, size)?;
-//    for class_def_item in class_def_items {
-//        let class_type = tidi[class_def_item.class_idx as usize].clone();
-//
-//        let access_flags = AccessFlag::parse(class_def_item.access_flags, AnnotationType::Class);
-//
-//        let superclass = if class_def_item.superclass_idx == NO_INDEX {
-//            None
-//        } else {
-//            Some(tidi[class_def_item.superclass_idx as usize].clone())
-//        };
-//
-//        let interfaces = if class_def_item.interfaces_off == 0 {
-//            None
-//        } else {
-//            Some(parse_type_list(&data[class_def_item.interfaces_off as usize - data_offset..], e)?
-//                .1
-//                .list
-//                .into_iter()
-//                .map(|idx| tidi[idx as usize].clone())
-//                .collect())
-//        };
-//
-//        let source_file_name = if class_def_item.source_file_idx == NO_INDEX {
-//            None
-//        } else {
-//            Some(sdi[class_def_item.source_file_idx as usize].clone())
-//        };
-//
-//        // class_def_item contains an offset to the start of the annotations structure
-//        let annotations = if class_def_item.annotations_off == 0 {
-//            None
-//        } else {
-//            let adi_offset = class_def_item.annotations_off as usize - data_offset;
-//            let (_, adi) = parse_annotations_directory_item(&data[adi_offset..], e)?;
-//            let class_annotations = if adi.class_annotations_off == 0 {
-//                None
-//            } else {
-//                let (_, set_item) = parse_annotation_set_item(
-//                    &data[adi.class_annotations_off as usize - data_offset..], e)?;
-//
-//                let mut class_annotations = vec!();
-//                // Each entry here is an offset to an annotation_item in the data pool
-//                for annotation_offset in set_item.entries {
-//                    // Every annotation item contains a visibility, a type and an annotation
-//                    let (_, annotation_item) = parse_annotation_item(&data[annotation_offset as usize - data_offset..])?;
-//
-//                    class_annotations.push(ClassAnnotation {
-//                        visibility: annotation_item.visibility,
-//                        type_: tidi[annotation_item.annotation.type_idx as usize].clone(),
-//                        elements: annotation_item.annotation.elements.into_iter().map(|item| {
-//                            AnnotationElement {
-//                                name: sdi[item.name_idx as usize].clone(),
-//                                value: item.value
-//                            }
-//                        }).collect()
-//                    });
-//                }
-//
-//                Some(class_annotations)
-//            };
-//
-//            let field_annotations = match adi.fld_annot {
-//                Some(raw_field_annotations) => {
-//                    let mut fa = vec!();
-//                    // convert raw field annotations to sensible ones
-//                    for rfa in raw_field_annotations {
-//                        let field_data = fdi[rfa.field_idx as usize].clone();
-//
-//                        let (_, asi) = parse_annotation_set_item(&data[rfa.annotations_offset as usize - data_offset..], e)?;
-//
-//                        let mut annotations = vec!();
-//                        for annot_offset in asi.entries {
-//                            let (_, ai) = parse_annotation_item(&data[annot_offset as usize - data_offset..])?;
-//                            annotations.push(ai);
-//                        }
-//
-//                        fa.push(FieldAnnotation {
-//                            field_data,
-//                            annotations
-//                        })
-//                    }
-//                    Some(fa)
-//                },
-//                None => None
-//            } ;
-//
-//
-//            // todo: method, parameter annotations
-//
-//
-//            //TODO
-//            Some(Annotations {
-//                class_annotations,
-//                field_annotations
-//            })
-//        };
-//
-//        let class_data = None;
-////        if adi.class_data_off = 0 {
-////            let (_, class_data) = parse_class_data_item(&data[- data_offset]);
-////        }
-//
-//        v.push(ClassDefinition {
-//            class_type, access_flags, superclass,
-//            interfaces, source_file_name, annotations,
-//            class_data });
-//    }
-//
-//    Ok((buffer, v))
-//}
+fn transform_annotations<'a>(data: &'a[u8], off: usize, data_off: usize, sd: &[Rc<StringData>], ti: &[Rc<TypeIdentifier>],
+                             fi: &[Rc<Field>], e: nom::Endianness) -> nom::IResult<&'a[u8], Annotations> {
 
+    let adi = parse_annotations_directory_item(&data[off - data_off..], e)?.1;
 
+    let class_annotations = if adi.class_annotations_off == 0 {
+        None
+    } else {
+        let set_item = parse_annotation_set_item(&data[adi.class_annotations_off as usize - data_off..], e)?.1;
+
+        let mut class_annotations = vec!();
+        // Each entry here is an offset to an annotation_item in the data pool
+        for annotation_offset in set_item.entries {
+            // Every annotation item contains a visibility, a type and an annotation
+            let annotation_item = parse_annotation_item(&data[annotation_offset as usize - data_off..])?.1;
+
+            class_annotations.push(ClassAnnotation {
+                visibility: annotation_item.visibility,
+                type_: ti[annotation_item.annotation.type_idx as usize].clone(),
+                elements: annotation_item.annotation.elements.into_iter().map(|i| {
+                    AnnotationElement {
+                        name: sd[i.name_idx as usize].clone(),
+                        value: i.value
+                    }
+                }).collect()
+            });
+        }
+
+        Some(class_annotations)
+    };
+
+    let field_annotations = match adi.fld_annot {
+        Some(raw_field_annotations) => {
+            let mut fa = vec!();
+            // convert raw field annotations to sensible ones
+            for rfa in raw_field_annotations {
+                let mut annotations = vec!();
+                let asi = parse_annotation_set_item(&data[rfa.annotations_offset as usize - data_off..], e)?.1;
+                for annot_offset in asi.entries {
+                    annotations.push(parse_annotation_item(&data[annot_offset as usize - data_off..])?.1);
+                }
+
+                fa.push(FieldAnnotation {
+                    field_data: fi[rfa.field_idx as usize].clone(),
+                    annotations
+                })
+            }
+            Some(fa)
+        },
+        None => None
+    };
+
+    // todo: method, parameter annotations
+
+    //TODO
+    Ok((data, Annotations {
+        class_annotations,
+        field_annotations
+    }))
+
+}
+
+fn transform_class_defs<'a>(data: &'a[u8], data_off: usize, cdis: &[RawClassDefinition], ti: &[Rc<TypeIdentifier>],
+                            sd: &[Rc<StringData>], fi: &[Rc<Field>], e: nom::Endianness) -> nom::IResult<&'a[u8], Vec<ClassDefinition>> {
+    let mut v = Vec::with_capacity(cdis.len());
+
+    for cdi in cdis {
+        let class_type = ti[cdi.class_idx as usize].clone();
+
+        let access_flags = AccessFlag::parse(cdi.access_flags, AnnotationType::Class);
+
+        let superclass = if cdi.superclass_idx == NO_INDEX {
+            None
+        } else {
+            Some(ti[cdi.superclass_idx as usize].clone())
+        };
+
+        let interfaces = if cdi.interfaces_off == 0 {
+            None
+        } else {
+            Some(parse_type_list(&data[cdi.interfaces_off as usize ..], e)?
+                .1
+                .list
+                .into_iter()
+                .map(|idx| ti[idx as usize].clone())
+                .collect())
+        };
+
+        let annotations = if cdi.annotations_off == 0 {
+            None
+        } else {
+            Some(transform_annotations(&data, cdi.annotations_off as usize, data_off, &sd, &ti, &fi, e)?.1)
+        };
+
+        let source_file_name = if cdi.source_file_idx == NO_INDEX {
+            None
+        } else {
+            Some(sd[cdi.source_file_idx as usize].clone())
+        };
+
+        let class_data = None;
+//        if adi.class_data_off = 0 {
+//            let (_, class_data) = parse_class_data_item(&data[- data_offset]);
+//        }
+
+        v.push(ClassDefinition {
+            class_type, access_flags, superclass,
+            interfaces, source_file_name, annotations,
+            class_data });
+    }
+
+    Ok((data, v))
+}
+
+// Docs: string_data
 named!(parse_string_data_item<&[u8], StringData>,
     peek!(
         do_parse!(
@@ -213,4 +213,29 @@ named!(parse_string_data_item<&[u8], StringData>,
                     str::to_string)                                                 >>
             (StringData { utf16_size, data })
     ))
+);
+
+// Docs: annotation_item
+named!(parse_annotation_item<&[u8], AnnotationItem>,
+    peek!(
+        do_parse!(
+            visibility: map_res!(call!(take_one), Visibility::parse)    >>
+            annotation: call!(encoded_value::parse_encoded_annotation_item)    >>
+            (AnnotationItem { visibility, annotation })
+        )
+    )
+);
+
+// Docs: annotation_offset_item
+named_args!(parse_annotation_offset_item(e: nom::Endianness)<&[u8], u32>, u32!(e));
+
+// Docs: annotation_set_item
+named_args!(parse_annotation_set_item(e: nom::Endianness)<&[u8], RawAnnotationSetItem>,
+    peek!(
+        do_parse!(
+            size: u32!(e)                               >>
+            entries: count!(call!(parse_annotation_offset_item, e), size as usize)     >>
+            (RawAnnotationSetItem { size, entries })
+        )
+    )
 );

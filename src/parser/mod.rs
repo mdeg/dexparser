@@ -71,16 +71,6 @@ fn parse_dex_file(input: &[u8], e: nom::Endianness) -> Result<(&[u8], RawDexFile
     )
 }
 
-// Docs: annotation_item
-named!(parse_annotation_item<&[u8], AnnotationItem>,
-    peek!(
-        do_parse!(
-            visibility: map_res!(call!(take_one), Visibility::parse)    >>
-            annotation: call!(encoded_value::parse_encoded_annotation_item)    >>
-            (AnnotationItem { visibility, annotation })
-        )
-    )
-);
 
 named!(take_one<&[u8], u8>, map!(take!(1), |x| { x[0] }));
 
@@ -267,20 +257,6 @@ named_args!(parse_parameter_annotation_item(e: nom::Endianness)<&[u8], RawParame
         (RawParameterAnnotation { method_idx, annotations_offset })
     )
 );
-
-// Docs: annotation_set_item
-named_args!(parse_annotation_set_item(e: nom::Endianness)<&[u8], RawAnnotationSetItem>,
-    peek!(
-        do_parse!(
-            size: u32!(e)                               >>
-            entries: count!(call!(parse_annotation_offset_item, e), size as usize)     >>
-            (RawAnnotationSetItem { size, entries })
-        )
-    )
-);
-
-// Docs: annotation_offset_item
-named_args!(parse_annotation_offset_item(e: nom::Endianness)<&[u8], u32>, u32!(e));
 
 // Docs: method_handle_item
 named_args!(parse_method_handle_items(size: usize, e: nom::Endianness)<&[u8], Vec<RawMethodHandleItem>>,
