@@ -224,10 +224,21 @@ fn transform_class_defs<'a>(data: &'a[u8], data_off: usize, cdis: &[RawClassDefi
             Some(sd[cdi.source_file_idx as usize].clone())
         };
 
-        let class_data = None;
-//        if adi.class_data_off = 0 {
-//            let (_, class_data) = parse_class_data_item(&data[- data_offset]);
-//        }
+        let class_data = if cdi.class_data_off == 0 {
+            None
+        } else {
+            let class_data = parse_class_data_item(&data[cdi.class_data_off as usize - data_off..], e)?.1;
+
+            let static_fields = vec!();
+
+            let instance_fields = vec!();
+
+            let direct_methods = vec!();
+
+            let virtual_methods = vec!();
+
+            Some(ClassData { static_fields, instance_fields, direct_methods, virtual_methods })
+        };
 
         v.push(ClassDefinition {
             class_type, access_flags, superclass,
@@ -288,6 +299,46 @@ named_args!(parse_annotation_set_item(e: nom::Endianness)<&[u8], RawAnnotationSe
             size: u32!(e)                               >>
             entries: count!(call!(parse_annotation_offset_item, e), size as usize)     >>
             (RawAnnotationSetItem { size, entries })
+        )
+    )
+);
+
+// Docs: class_data_item
+named_args!(parse_class_data_item(e: nom::Endianness)<&[u8], RawClassDataItem>,
+    peek!(
+        do_parse!(
+            static_fields_size: call!(parse_uleb128)    >>
+            instance_fields_size: call!(parse_uleb128)    >>
+            direct_methods_size: call!(parse_uleb128)    >>
+            virtual_methods_size: call!(parse_uleb128)    >>
+            static_fields: count!(parse_encoded_field, static_fields_size as usize)    >>
+            instance_fields: count!(parse_encoded_field, instance_fields_size as usize)  >>
+            direct_methods: count!(parse_encoded_method, direct_methods_size as usize)    >>
+            virtual_methods: count!(parse_encoded_method, virtual_methods_size as usize) >>
+            (RawClassDataItem { static_fields_size, instance_fields_size, direct_methods_size,
+            virtual_methods_size, direct_methods, instance_fields, static_fields, virtual_methods })
+        )
+
+    )
+);
+
+named!(parse_encoded_field<&[u8], RawEncodedField>,
+    peek!(
+        do_parse!(
+            field_idx_diff: call!(parse_uleb128)    >>
+            access_flags: call!(parse_uleb128)  >>
+            (RawEncodedField { field_idx_diff, access_flags })
+        )
+    )
+);
+
+named!(parse_encoded_method<&[u8], RawEncodedMethod>,
+    peek!(
+        do_parse!(
+            method_idx_diff: call!(parse_uleb128)   >>
+            access_flags: call!(parse_uleb128)  >>
+            code_off: call!(parse_uleb128)  >>
+            (RawEncodedMethod { method_idx_diff, access_flags, code_off })
         )
     )
 );

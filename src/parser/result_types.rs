@@ -109,7 +109,8 @@ pub struct ClassDefinition {
     pub interfaces: Option<Vec<Rc<TypeIdentifier>>>,
     pub source_file_name: Option<Rc<StringData>>,
     pub annotations: Option<Annotations>,
-    pub class_data: Option<ClassData>
+    pub class_data: Option<ClassData>,
+    //TODO: static values
 }
 
 #[derive(Debug)]
@@ -130,12 +131,20 @@ pub struct ClassData {
 
 #[derive(Debug)]
 pub struct EncodedField {
-
+    field: Rc<Field>,
+    access_flags: Vec<AccessFlag>
 }
 
 #[derive(Debug)]
 pub struct EncodedMethod {
+    method: Rc<Method>,
+    access_flags: Vec<AccessFlag>,
+    code: Code
+}
 
+#[derive(Debug)]
+pub struct Code {
+    // TODO
 }
 
 #[derive(Debug)]

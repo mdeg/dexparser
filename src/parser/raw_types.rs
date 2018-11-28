@@ -182,7 +182,6 @@ pub struct RawClassDefinition {
     pub static_values_off: u32
 }
 
-
 #[derive(Debug)]
 pub struct RawField {
     pub class_idx: u16,
@@ -226,7 +225,7 @@ pub struct RawMethodHandleItem {
     pub unused_2: u16
 }
 
-
+// TODO: change casing
 #[derive(Debug, PartialEq)]
 pub enum MapListItemType {
     HeaderItem,
