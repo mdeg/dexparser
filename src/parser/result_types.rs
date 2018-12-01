@@ -139,7 +139,7 @@ pub struct EncodedField {
 pub struct EncodedMethod {
     pub method: Rc<Method>,
     pub access_flags: Vec<AccessFlag>,
-    pub code: Code
+    pub code: Option<Code>
 }
 
 #[derive(Debug)]

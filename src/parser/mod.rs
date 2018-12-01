@@ -75,7 +75,7 @@ fn parse_dex_file(input: &[u8], e: nom::Endianness) -> Result<(&[u8], RawDexFile
 named!(take_one<&[u8], u8>, map!(take!(1), |x| { x[0] }));
 
 // Length of uleb128 value is determined by the
-pub fn determine_uleb128_length(input: &[u8]) -> usize {
+pub fn determine_leb128_length(input: &[u8]) -> usize {
     input.iter()
         .take_while(|byte| (*byte & 0x80) != 0)
         .count()
@@ -84,8 +84,16 @@ pub fn determine_uleb128_length(input: &[u8]) -> usize {
 
 named!(parse_uleb128<&[u8], u64>,
     do_parse!(
-        len: peek!(map!(take!(5), determine_uleb128_length))    >>
+        len: peek!(map!(take!(5), determine_leb128_length))    >>
         value: map_res!(take!(len), read_uleb128)          >>
+        (value)
+    )
+);
+
+named!(parse_sleb128<&[u8], i64>,
+    do_parse!(
+        len: peek!(map!(take!(5), determine_leb128_length))    >>
+        value: map_res!(take!(len), read_sleb128)          >>
         (value)
     )
 );
@@ -94,6 +102,10 @@ named!(parse_uleb128<&[u8], u64>,
 // No syntactically valid way to convert the two inside the macro so we'll make a wrapper function
 pub fn read_uleb128(input: &[u8]) -> Result<u64, leb128::read::Error> {
     leb128::read::unsigned(&mut (input.clone()))
+}
+
+pub fn read_sleb128(input: &[u8]) -> Result<i64, leb128::read::Error> {
+    leb128::read::signed(&mut (input.clone()))
 }
 
 named_args!(parse_u32_list(size: usize, e: nom::Endianness)<&[u8], Vec<u32>>, count!(u32!(e), size));
@@ -399,11 +411,5 @@ impl AccessFlag {
         // TODO: some kind of assert here - use count_1s
 
         v
-    }
-
-    // Some access flags are stored as uleb128, which parses down to an unsigned 64-bit integer
-    // Access flags are only encoded in u32 so we're safe to truncate
-    fn parse_from_u64(value: u64, type_: AnnotationType) -> Vec<Self> {
-        Self::parse(value as u32, type_)
     }
 }

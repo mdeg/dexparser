@@ -225,6 +225,65 @@ pub struct RawMethodHandleItem {
     pub unused_2: u16
 }
 
+// Docs: code_item
+#[derive(Debug)]
+pub struct RawCodeItem {
+    // number of registers used by this code
+    pub registers_size: u16,
+    // number of words of incoming arguments
+    pub ins_size: u16,
+    // number of words of outgoing argument space
+    pub outs_size: u16,
+    pub tries_size: u16,
+    pub debug_info_off: u32,
+    pub insns_size: u32,
+    pub insns: Vec<u16>,
+    pub padding: Option<u16>,
+    pub tries: Option<Vec<RawTryItem>>,
+    pub handlers: Option<RawEncodedCatchHandlerList>
+}
+
+// Docs: try_item
+#[derive(Debug)]
+pub struct RawTryItem {
+    // start address of the block of code covered by this entry
+    // a count of 16-bit code units to the start of the first covered instruction
+    pub start_addr: u32,
+    // number of 16-bit code units covered by this entry
+    pub insn_count: u16,
+    pub handler_off: u16
+}
+
+// Docs: encoded_catch_handler_list
+#[derive(Debug)]
+pub struct RawEncodedCatchHandlerList {
+    // size of the list
+    pub size: u64,
+    // list of encoded_catch_handlers
+    pub list: Vec<RawEncodedCatchHandler>
+}
+
+// Docs: encoded_catch_handler
+#[derive(Debug)]
+pub struct RawEncodedCatchHandler {
+    //sleb128???
+    pub size: i64,
+
+    pub handlers: Vec<RawEncodedTypeAddrPair>,
+    // bytecode
+    // only present if size is non-positive
+    pub catch_all_addr: Option<u64>
+}
+
+// Docs: encoded_type_addr_pair
+#[derive(Debug)]
+pub struct RawEncodedTypeAddrPair {
+    // index into type_ids list for the type of exception to catch
+    pub type_idx: u64,
+    // bytecode address of associated exception handler
+    pub addr: u64
+}
+
 //noinspection RsEnumVariantNaming
 #[allow(non_camel_case_types)]
 #[derive(Debug, PartialEq)]

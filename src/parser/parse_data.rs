@@ -11,7 +11,7 @@ fn transform_string_id_items<'a>(data: &'a[u8], sdi: &[u32], off: usize) -> nom:
     Ok((data, v))
 }
 
-fn transform_header(raw: RawHeader, e: nom::Endianness) -> Result<Header, ParserErr> {
+fn transform_header(raw: &RawHeader, e: nom::Endianness) -> Result<Header, ParserErr> {
     Ok(Header {
         version: String::from_utf8(raw.version.to_vec())?,
         checksum: raw.checksum.to_string(),
@@ -44,12 +44,12 @@ fn transform_prototype_id_items<'a>(data: &'a[u8], proto_ids: &[RawPrototype], s
     Ok((data, v))
 }
 
-pub fn transform_dex_file<'a>(raw: RawDexFile, e: nom::Endianness) -> Result<DexFile, ParserErr> {
+pub fn transform_dex_file(raw: RawDexFile, e: nom::Endianness) -> Result<DexFile, ParserErr> {
 
     // Offsets are given, but we only have the data blob here, so we'll need to do some math
     let off = raw.header.data_off as usize;
 
-    let header = transform_header(raw.header, e)?;
+    let header = transform_header(&raw.header, e)?;
 
     let sd = transform_string_id_items(&raw.data, &raw.string_id_items, off)?.1;
 
@@ -230,11 +230,9 @@ fn transform_class_defs<'a>(data: &'a[u8], data_off: usize, cdis: &[RawClassDefi
             let class_data = parse_class_data_item(&data[cdi.class_data_off as usize - data_off..], e)?.1;
 
             let static_fields = transform_encoded_fields(&class_data.static_fields, &fi);
-            let instance_fields = transform_encoded_fields(&class_data.static_fields, &fi);
-
-            let direct_methods = vec!();
-
-            let virtual_methods = vec!();
+            let instance_fields = transform_encoded_fields(&class_data.instance_fields, &fi);
+            let direct_methods = transform_encoded_methods(&data, data_off, &class_data.direct_methods, &mtd, e)?.1;
+            let virtual_methods = transform_encoded_methods(&data, data_off, &class_data.virtual_methods, &mtd, e)?.1;
 
             Some(ClassData { static_fields, instance_fields, direct_methods, virtual_methods })
         };
@@ -258,20 +256,103 @@ fn transform_encoded_fields(raw: &[RawEncodedField], fi: &[Rc<Field>]) -> Vec<En
     for field in raw {
         fields.push(EncodedField {
             field: fi[(prev_offset + field.field_idx_diff) as usize].clone(),
-            access_flags: AccessFlag::parse_from_u64(field.access_flags, AnnotationType::Field)
+            access_flags: AccessFlag::parse(field.access_flags as u32, AnnotationType::Field)
         });
         prev_offset = field.field_idx_diff;
     }
     fields
 }
 
+fn transform_encoded_methods<'a>(data: &'a[u8], data_off: usize, raw: &[RawEncodedMethod],
+                                 mtd: &[Rc<Method>], e: nom::Endianness) -> nom::IResult<&'a[u8], Vec<EncodedMethod>> {
+    let mut methods = vec!();
+    let mut prev_offset = 0;
+    for method in raw {
+        let code = if method.code_off == 0 {
+            None
+        } else {
+            let raw_code_item = parse_code_item(&data[method.code_off as usize - data_off ..], e)?.1;
+
+            // TODO
+
+            Some(Code { })
+        };
+
+        methods.push(EncodedMethod {
+            method: mtd[(prev_offset + method.method_idx_diff) as usize].clone(),
+            access_flags: AccessFlag::parse(method.access_flags as u32, AnnotationType::Method),
+            code
+        });
+
+        prev_offset = method.method_idx_diff;
+    }
+
+    Ok((data, methods))
+}
+
+// Docs: code_item
+named_args!(parse_code_item(e: nom::Endianness)<&[u8], RawCodeItem>,
+    peek!(
+        do_parse!(
+            registers_size: u16!(e) >>
+            ins_size: u16!(e)   >>
+            outs_size: u16!(e)  >>
+            tries_size: u16!(e) >>
+            debug_info_off: u32!(e) >>
+            insns_size: u32!(e) >>
+            insns: count!(u16!(e), insns_size as usize)  >>
+            padding: cond!(tries_size != 0 && insns_size % 2 != 0, u16!(e))  >>
+            tries: cond!(tries_size != 0, count!(call!(parse_try_item, e), tries_size as usize)) >>
+            handlers: cond!(tries_size != 0, call!(parse_encoded_catch_handler_list))  >>
+            (RawCodeItem { registers_size, ins_size, outs_size, tries_size, debug_info_off,
+             insns_size, insns, padding, tries, handlers })
+        )
+    )
+);
+
+// Docs: try_item
+named_args!(parse_try_item(e: nom::Endianness)<&[u8], RawTryItem>,
+    do_parse!(
+        start_addr: u32!(e) >>
+        insn_count: u16!(e) >>
+        handler_off: u16!(e)    >>
+        (RawTryItem { start_addr, insn_count, handler_off })
+    )
+);
+
+// Docs: encoded_catch_handler_list
+named!(parse_encoded_catch_handler_list<&[u8], RawEncodedCatchHandlerList>,
+    do_parse!(
+        size: call!(parse_uleb128) >>
+        list: count!(call!(parse_encoded_catch_handler), size as usize)  >>
+        (RawEncodedCatchHandlerList { size, list })
+    )
+);
+
+// Docs: encoded_catch_handler
+named!(parse_encoded_catch_handler<&[u8], RawEncodedCatchHandler>,
+    do_parse!(
+        size: call!(parse_sleb128) >>
+        handlers: count!(call!(parse_encoded_type_addr_pair), size as usize) >>
+        catch_all_addr: cond!(size < 0, call!(parse_uleb128)) >>
+        (RawEncodedCatchHandler { size, handlers, catch_all_addr })
+    )
+);
+
+// Docs: encoded_type_addr_pair
+named!(parse_encoded_type_addr_pair<&[u8], RawEncodedTypeAddrPair>,
+    do_parse!(
+        type_idx: call!(parse_uleb128)  >>
+        addr: call!(parse_uleb128)  >>
+        (RawEncodedTypeAddrPair { type_idx, addr })
+    )
+);
+
 // Docs: string_data
 named!(parse_string_data_item<&[u8], StringData>,
     peek!(
         do_parse!(
-            // uleb128 values are 1-5 bytes long - determine how long it is so we can parse the item
-            uleb_len: peek!(map!(take!(5), determine_uleb128_length))               >>
-            utf16_size: map_res!(take!(uleb_len), read_uleb128)                     >>
+            utf16_size: call!(parse_uleb128)                    >>
             data: map!(
                     map_res!(
                         take_until_and_consume!("\0"), str::from_utf8),
