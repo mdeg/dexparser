@@ -462,6 +462,48 @@ named!(parse_annotation_item<&[u8], AnnotationItem>,
     )
 );
 
+// Docs: annotation_directory_item
+named_args!(parse_annotations_directory_item(e:nom::Endianness)<&[u8], RawAnnotations>,
+    peek!(do_parse!(
+        class_annotations_off: u32!(e)                                                          >>
+        fld_size: u32!(e)                                                                    >>
+        mtd_size: u32!(e)                                                         >>
+        prm_size: u32!(e)                                                      >>
+        fld_annot: cond!(fld_size > 0, count!(apply!(parse_field_annotation_item, e), fld_size as usize)) >>
+        mtd_annot: cond!(mtd_size > 0, count!(apply!(parse_method_annotation_item, e), mtd_size as usize)) >>
+        prm_annot: cond!(prm_size > 0, count!(apply!(parse_parameter_annotation_item, e), prm_size as usize)) >>
+        (RawAnnotations { class_annotations_off, fld_annot, mtd_annot, prm_annot })
+    ))
+);
+
+// Docs: field_annotation_item
+named_args!(parse_field_annotation_item(e: nom::Endianness)<&[u8], RawFieldAnnotation>,
+    do_parse!(
+        field_idx: u32!(e) >>
+        annotations_offset: u32!(e) >>
+        (RawFieldAnnotation { field_idx, annotations_offset })
+    )
+);
+
+// Docs: method_annotation_item
+named_args!(parse_method_annotation_item(e: nom::Endianness)<&[u8], RawMethodAnnotation>,
+    do_parse!(
+        method_idx: u32!(e) >>
+        annotations_offset: u32!(e) >>
+        (RawMethodAnnotation { method_idx, annotations_offset })
+    )
+);
+
+// Docs: parameter_annotation_item
+named_args!(parse_parameter_annotation_item(e: nom::Endianness)<&[u8], RawParameterAnnotation>,
+    do_parse!(
+        method_idx: u32!(e) >>
+        annotations_offset: u32!(e) >>
+        (RawParameterAnnotation { method_idx, annotations_offset })
+    )
+);
+
+
 // Docs: annotation_element_item
 named!(pub parse_annotation_element_item<&[u8], RawAnnotationElementItem>,
     do_parse!(
@@ -547,5 +589,85 @@ impl DebugItemBytecodes {
             0x09 => DebugItemBytecodes::DBG_SET_FILE,
             _ => DebugItemBytecodes::SPECIAL_OPCODE(value)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use byteorder::*;
+
+    #[allow(non_upper_case_globals)]
+    const e: nom::Endianness = nom::Endianness::Little;
+
+    #[test]
+    fn test_parse_parameter_annotation_item() {
+        let mut writer = vec!();
+        for d in &[1_u32, 2_u32] {
+            writer.write_u32::<LittleEndian>(*d).unwrap();
+        }
+        let res = parse_parameter_annotation_item(&writer, e).unwrap();
+        assert_eq!(res.0.len(), 0);
+        assert_eq!(res.1, RawParameterAnnotation { method_idx: 1, annotations_offset: 2 });
+    }
+
+    #[test]
+    fn test_parse_field_annotation_item() {
+        let mut writer = vec!();
+        for d in &[1_u32, 2_u32] {
+            writer.write_u32::<LittleEndian>(*d).unwrap();
+        }
+        let res = parse_field_annotation_item(&writer, e).unwrap();
+        assert_eq!(res.0.len(), 0);
+        assert_eq!(res.1, RawFieldAnnotation { field_idx: 1, annotations_offset: 2 });
+    }
+
+    #[test]
+    fn test_parse_method_annotation_item() {
+        let mut writer = vec!();
+        for d in &[1_u32, 2_u32] {
+            writer.write_u32::<LittleEndian>(*d).unwrap();
+        }
+        let res = parse_method_annotation_item(&writer, e).unwrap();
+        assert_eq!(res.0.len(), 0);
+        assert_eq!(res.1, RawMethodAnnotation { method_idx: 1, annotations_offset: 2 });
+    }
+
+    #[test]
+    fn test_parse_annotations_directory_item_full() {
+        let mut writer = vec!();
+        for d in &[0_u32, 1_u32, 1_u32, 1_u32, 1_u32, 2_u32, 1_u32, 2_u32, 1_u32, 2_u32] {
+            writer.write_u32::<LittleEndian>(*d).unwrap();
+        }
+        let res = parse_annotations_directory_item(&writer, e).unwrap();
+
+        // peek!() should not consume input
+        assert_eq!(res.0.len(), writer.len());
+
+        assert_eq!(res.1, RawAnnotations {
+            class_annotations_off: 0,
+            fld_annot: Some(vec!(RawFieldAnnotation { field_idx: 1, annotations_offset: 2 })),
+            mtd_annot: Some(vec!(RawMethodAnnotation { method_idx: 1, annotations_offset: 2 })),
+            prm_annot: Some(vec!(RawParameterAnnotation { method_idx: 1, annotations_offset: 2 }))
+        })
+    }
+
+    #[test]
+    fn test_parse_annotations_directory_item_empty() {
+        let mut writer = vec!();
+        for d in &[0_u32, 0_u32, 0_u32, 0_u32] {
+            writer.write_u32::<LittleEndian>(*d).unwrap();
+        }
+        let res = parse_annotations_directory_item(&writer, e).unwrap();
+
+        // peek!() should not consume input
+        assert_eq!(res.0.len(), writer.len());
+
+        assert_eq!(res.1, RawAnnotations {
+            class_annotations_off: 0,
+            fld_annot: None,
+            mtd_annot: None,
+            prm_annot: None
+        })
     }
 }

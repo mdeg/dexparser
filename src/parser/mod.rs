@@ -44,10 +44,6 @@ pub fn parse(buffer: &[u8]) -> Result<DexFile, ParserErr> {
     }
 }
 
-named_args!(parse_string_id_items(size: usize, e: nom::Endianness)<&[u8], Vec<u32>>,
-    call!(parse_u32_list, size, e)
-);
-
 // TODO: conds for string id, type id, etc
 fn parse_dex_file(input: &[u8], e: nom::Endianness) -> Result<(&[u8], RawDexFile), nom::Err<&[u8]>> {
     do_parse!(input,
@@ -112,6 +108,10 @@ pub fn read_uleb128(input: &[u8]) -> Result<u64, leb128::read::Error> {
 pub fn read_sleb128(input: &[u8]) -> Result<i64, leb128::read::Error> {
     leb128::read::signed(&mut (input.clone()))
 }
+
+named_args!(parse_string_id_items(size: usize, e: nom::Endianness)<&[u8], Vec<u32>>,
+    call!(parse_u32_list, size, e)
+);
 
 named_args!(parse_u32_list(size: usize, e: nom::Endianness)<&[u8], Vec<u32>>, count!(u32!(e), size));
 
@@ -234,47 +234,6 @@ named_args!(parse_header(e: nom::Endianness)<&[u8], RawHeader>,
     )
 );
 
-// Docs: annotation_directory_item
-named_args!(parse_annotations_directory_item(e:nom::Endianness)<&[u8], RawAnnotations>,
-    peek!(do_parse!(
-        class_annotations_off: u32!(e)                                                          >>
-        fld_size: u32!(e)                                                                    >>
-        mtd_size: u32!(e)                                                         >>
-        prm_size: u32!(e)                                                      >>
-        fld_annot: cond!(fld_size > 0, count!(apply!(parse_field_annotation_item, e), fld_size as usize)) >>
-        mtd_annot: cond!(mtd_size > 0, count!(apply!(parse_method_annotation_item, e), mtd_size as usize)) >>
-        prm_annot: cond!(prm_size > 0, count!(apply!(parse_parameter_annotation_item, e), prm_size as usize)) >>
-        (RawAnnotations { class_annotations_off, fld_annot, mtd_annot, prm_annot })
-    ))
-);
-
-// Docs: field_annotation_item
-named_args!(parse_field_annotation_item(e: nom::Endianness)<&[u8], RawFieldAnnotation>,
-    do_parse!(
-        field_idx: u32!(e) >>
-        annotations_offset: u32!(e) >>
-        (RawFieldAnnotation { field_idx, annotations_offset })
-    )
-);
-
-// Docs: method_annotation_item
-named_args!(parse_method_annotation_item(e: nom::Endianness)<&[u8], RawMethodAnnotation>,
-    do_parse!(
-        method_idx: u32!(e) >>
-        annotations_offset: u32!(e) >>
-        (RawMethodAnnotation { method_idx, annotations_offset })
-    )
-);
-
-// Docs: parameter_annotation_item
-named_args!(parse_parameter_annotation_item(e: nom::Endianness)<&[u8], RawParameterAnnotation>,
-    do_parse!(
-        method_idx: u32!(e) >>
-        annotations_offset: u32!(e) >>
-        (RawParameterAnnotation { method_idx, annotations_offset })
-    )
-);
-
 // Docs: method_handle_item
 named_args!(parse_method_handle_items(size: usize, e: nom::Endianness)<&[u8], Vec<RawMethodHandleItem>>,
     count!(
@@ -375,6 +334,10 @@ impl AccessFlag {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use byteorder::*;
+
+    #[allow(non_upper_case_globals)]
+    const e: nom::Endianness = nom::Endianness::Little;
 
     #[test]
     // TODO: test endianness
@@ -383,5 +346,197 @@ mod tests {
         assert_eq!(AccessFlag::parse(std::u32::MAX, AnnotationType::Method).len(), 18);
         // No flags
         assert_eq!(AccessFlag::parse(std::u32::MIN, AnnotationType::Method).len(), 0);
+    }
+
+    #[test]
+    fn test_parse_method_handle_item() {
+        // two method handle items
+        let mut writer = vec!();
+        for d in &[1_u16, 2_u16, 3_u16, 4_u16, 5_u16, 6_u16, 7_u16, 8_u16] {
+            writer.write_u16::<LittleEndian>(*d).unwrap();
+        }
+
+        let res = parse_method_handle_items(&writer, 2, e).unwrap();
+
+        assert_eq!(res.0.len(), 0);
+        assert_eq!(res.1.len(), 2);
+        assert_eq!(res.1[0], RawMethodHandleItem { type_: 1, unused_1: 2, field_or_method_id: 3, unused_2: 4 } );
+        assert_eq!(res.1[1], RawMethodHandleItem { type_: 5, unused_1: 6, field_or_method_id: 7, unused_2: 8 } );
+    }
+
+    #[test]
+    fn test_parse_class_def_items() {
+        let mut writer = vec!();
+        // two class def items
+        for d in &[1_u32, 1_u32, 1_u32, 1_u32, 1_u32, 1_u32, 1_u32, 1_u32,
+            2_u32, 2_u32, 2_u32, 2_u32, 2_u32, 2_u32, 2_u32, 2_u32] {
+
+            writer.write_u32::<LittleEndian>(*d).unwrap();
+        }
+
+        let res = parse_class_def_items(&writer, 2, e).unwrap();
+
+        assert_eq!(res.0.len(), 0);
+        assert_eq!(res.1, vec!(
+            RawClassDefinition {
+                class_idx: 1,
+                access_flags: 1,
+                superclass_idx: 1,
+                interfaces_off: 1,
+                source_file_idx: 1,
+                annotations_off: 1,
+                class_data_off: 1,
+                static_values_off: 1
+            },
+            RawClassDefinition {
+                class_idx: 2,
+                access_flags: 2,
+                superclass_idx: 2,
+                interfaces_off: 2,
+                source_file_idx: 2,
+                annotations_off: 2,
+                class_data_off: 2,
+                static_values_off: 2
+            }
+        ))
+    }
+
+    #[test]
+    fn test_parse_method_id_items() {
+        let mut writer = vec!();
+        // two method id items
+        writer.write_u16::<LittleEndian>(1).unwrap();
+        writer.write_u16::<LittleEndian>(1).unwrap();
+        writer.write_u32::<LittleEndian>(1).unwrap();
+
+        writer.write_u16::<LittleEndian>(2).unwrap();
+        writer.write_u16::<LittleEndian>(2).unwrap();
+        writer.write_u32::<LittleEndian>(2).unwrap();
+
+        let res = parse_method_id_items(&writer, 2, e).unwrap();
+
+        assert_eq!(res.0.len(), 0);
+        assert_eq!(res.1, vec!(
+            RawMethod {
+                class_idx: 1,
+                proto_idx: 1,
+                name_idx: 1
+            },
+            RawMethod {
+                class_idx: 2,
+                proto_idx: 2,
+                name_idx: 2
+            }
+        ));
+    }
+
+    #[test]
+    fn test_parse_field_id_items() {
+        let mut writer = vec!();
+        // two field id items
+        writer.write_u16::<LittleEndian>(1).unwrap();
+        writer.write_u16::<LittleEndian>(1).unwrap();
+        writer.write_u32::<LittleEndian>(1).unwrap();
+
+        writer.write_u16::<LittleEndian>(2).unwrap();
+        writer.write_u16::<LittleEndian>(2).unwrap();
+        writer.write_u32::<LittleEndian>(2).unwrap();
+
+        let res = parse_field_id_items(&writer, 2, e).unwrap();
+
+        assert_eq!(res.0.len(), 0);
+        assert_eq!(res.1, vec!(
+            RawField {
+                class_idx: 1,
+                type_idx: 1,
+                name_idx: 1
+            },
+            RawField {
+                class_idx: 2,
+                type_idx: 2,
+                name_idx: 2
+            }
+        ));
+    }
+
+    #[test]
+    fn test_parse_proto_id_items() {
+        let mut writer = vec!();
+        // two proto id items
+        writer.write_u32::<LittleEndian>(1).unwrap();
+        writer.write_u32::<LittleEndian>(1).unwrap();
+        writer.write_u32::<LittleEndian>(1).unwrap();
+
+        writer.write_u32::<LittleEndian>(2).unwrap();
+        writer.write_u32::<LittleEndian>(2).unwrap();
+        writer.write_u32::<LittleEndian>(2).unwrap();
+
+        let res = parse_proto_id_items(&writer, 2, e).unwrap();
+
+        assert_eq!(res.0.len(), 0);
+        assert_eq!(res.1, vec!(
+            RawPrototype {
+                shorty_idx: 1,
+                return_type_idx: 1,
+                parameters_off: 1
+            },
+            RawPrototype {
+                shorty_idx: 2,
+                return_type_idx: 2,
+                parameters_off: 2
+            }
+        ));
+    }
+
+    #[test]
+    fn test_parse_type_list() {
+        let mut writer = vec!();
+        writer.write_u32::<LittleEndian>(2).unwrap();
+        writer.write_u16::<LittleEndian>(1).unwrap();
+        writer.write_u16::<LittleEndian>(1).unwrap();
+
+        let res = parse_type_list(&writer, e).unwrap();
+
+        assert_eq!(res.0.len(), writer.len());
+        assert_eq!(res.1, RawTypeList {
+            size: 2,
+            list: vec!(1, 1)
+        });
+    }
+
+    #[test]
+    fn test_parse_map_list() {
+        let mut writer = vec!();
+        writer.write_u32::<LittleEndian>(2).unwrap();
+
+        // First list item
+        writer.write_u16::<LittleEndian>(0x0000).unwrap();
+        writer.write_u16::<LittleEndian>(1).unwrap();
+        writer.write_u32::<LittleEndian>(1).unwrap();
+        writer.write_u32::<LittleEndian>(1).unwrap();
+
+        // Second list item
+        writer.write_u16::<LittleEndian>(0x0001).unwrap();
+        writer.write_u16::<LittleEndian>(2).unwrap();
+        writer.write_u32::<LittleEndian>(2).unwrap();
+        writer.write_u32::<LittleEndian>(2).unwrap();
+
+        let res = parse_map_list(&[], &writer, e).unwrap();
+
+        assert_eq!(res.0.len(), 0);
+        assert_eq!(res.1, RawMapList {
+            size: 2,
+            list: vec!(RawMapListItem {
+                type_: MapListItemType::HEADER_ITEM,
+                unused: 1,
+                size: 1,
+                offset: 1
+            }, RawMapListItem {
+                type_: MapListItemType::STRING_ID_ITEM,
+                unused: 2,
+                size: 2,
+                offset: 2
+            })
+        });
     }
 }

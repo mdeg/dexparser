@@ -54,7 +54,7 @@ named!(pub parse_encoded_annotation_item<&[u8], RawEncodedAnnotationItem>,
 );
 
 // parse value type, then get length and parse value based on that
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum EncodedValue {
     Byte(u8),
     Short(i16),
@@ -84,7 +84,7 @@ named!(pub parse_encoded_array_item<&[u8], EncodedArrayItem>,
     )
 );
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct EncodedArrayItem {
     size: u64,
     values: Vec<EncodedValue>

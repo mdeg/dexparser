@@ -1,6 +1,6 @@
 // Raw type of the DEX file
 //
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct RawDexFile {
     // Docs: header_item
     pub header: RawHeader,
@@ -27,7 +27,7 @@ pub struct RawDexFile {
     pub link_data: Option<Vec<u8>>
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct RawHeader {
     // DEX file version
     pub version: [u8; 4],
@@ -77,7 +77,7 @@ pub struct RawHeader {
     pub data_off: u32
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct RawClassDataItem {
     pub static_fields_size: u64,
     pub instance_fields_size: u64,
@@ -89,20 +89,20 @@ pub struct RawClassDataItem {
     pub virtual_methods: Vec<RawEncodedMethod>
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct RawEncodedField {
     pub field_idx_diff: u64,
     pub access_flags: u64
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct RawEncodedMethod {
     pub method_idx_diff: u64,
     pub access_flags: u64,
     pub code_off: u64
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct RawAnnotations {
     pub class_annotations_off: u32,
     pub fld_annot: Option<Vec<RawFieldAnnotation>>,
@@ -110,26 +110,26 @@ pub struct RawAnnotations {
     pub prm_annot: Option<Vec<RawParameterAnnotation>>
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct RawFieldAnnotation {
     pub field_idx: u32,
     pub annotations_offset: u32
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct RawMethodAnnotation {
     pub method_idx: u32,
     pub annotations_offset: u32
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct RawParameterAnnotation {
     pub method_idx: u32,
     pub annotations_offset: u32
 }
 
 // Docs: type_list
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct RawTypeList {
     // Size of the following list
     pub size: u32,
@@ -139,7 +139,7 @@ pub struct RawTypeList {
 }
 
 // Docs: annotation_set_item
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct RawAnnotationSetItem {
     // Size of the following list
     pub size: u32,
@@ -149,7 +149,7 @@ pub struct RawAnnotationSetItem {
 }
 
 // Docs: annotation_set_ref_list
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct RawAnnotationSetRefList {
     // Size of the following list
     pub size: u32,
@@ -158,7 +158,7 @@ pub struct RawAnnotationSetRefList {
     pub entries: Vec<u32>
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct RawEncodedAnnotationItem {
     pub type_idx: u64,
     pub size: u64,
@@ -166,14 +166,14 @@ pub struct RawEncodedAnnotationItem {
 }
 
 // Docs: annotation_element_item
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct RawAnnotationElementItem {
     pub name_idx: u64,
     pub value: super::encoded_value::EncodedValue
 }
 
 // Docs: method_id_item
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct RawMethod {
     // Index in the classes list
     pub class_idx: u16,
@@ -184,7 +184,7 @@ pub struct RawMethod {
 }
 
 // Docs: class_def_item
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct RawClassDefinition {
     pub class_idx: u32,
     pub access_flags: u32,
@@ -196,7 +196,7 @@ pub struct RawClassDefinition {
     pub static_values_off: u32
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct RawField {
     pub class_idx: u16,
     pub type_idx: u16,
@@ -204,7 +204,7 @@ pub struct RawField {
 }
 
 // Docs: proto_id_item
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct RawPrototype {
     // Index into the string IDs list for the descriptor string of this prototype
     pub shorty_idx: u32,
@@ -215,14 +215,14 @@ pub struct RawPrototype {
 }
 
 // Docs: map_list
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct RawMapList {
     pub size: u32,
     pub list: Vec<RawMapListItem>
 }
 
 // Docs: map_list_item
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct RawMapListItem {
     pub type_: MapListItemType,
     pub unused: u16,
@@ -231,7 +231,7 @@ pub struct RawMapListItem {
 }
 
 // Docs: method_handle_item
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct RawMethodHandleItem {
     pub type_: u16,
     pub unused_1: u16,
@@ -240,7 +240,7 @@ pub struct RawMethodHandleItem {
 }
 
 // Docs: code_item
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct RawCodeItem {
     // number of registers used by this code
     pub registers_size: u16,
@@ -258,7 +258,7 @@ pub struct RawCodeItem {
 }
 
 // Docs: try_item
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct RawTryItem {
     // start address of the block of code covered by this entry
     // a count of 16-bit code units to the start of the first covered instruction
@@ -269,7 +269,7 @@ pub struct RawTryItem {
 }
 
 // Docs: encoded_catch_handler_list
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct RawEncodedCatchHandlerList {
     // size of the list
     pub size: u64,
@@ -278,7 +278,7 @@ pub struct RawEncodedCatchHandlerList {
 }
 
 // Docs: encoded_catch_handler
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct RawEncodedCatchHandler {
     // Size of the handlers list
     pub size: i64,
@@ -289,7 +289,7 @@ pub struct RawEncodedCatchHandler {
 }
 
 // Docs: encoded_type_addr_pair
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct RawEncodedTypeAddrPair {
     // index into type_ids list for the type of exception to catch
     pub type_idx: u64,
@@ -298,7 +298,7 @@ pub struct RawEncodedTypeAddrPair {
 }
 
 // Docs: debug_info_item
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct RawDebugInfoItem {
     pub line_start: u64,
     pub parameters_size: u64,
