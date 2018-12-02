@@ -158,6 +158,20 @@ pub struct RawAnnotationSetRefList {
     pub entries: Vec<u32>
 }
 
+#[derive(Debug)]
+pub struct RawEncodedAnnotationItem {
+    pub type_idx: u64,
+    pub size: u64,
+    pub elements: Vec<RawAnnotationElementItem>
+}
+
+// Docs: annotation_element_item
+#[derive(Debug)]
+pub struct RawAnnotationElementItem {
+    pub name_idx: u64,
+    pub value: super::encoded_value::EncodedValue
+}
+
 // Docs: method_id_item
 #[derive(Debug)]
 pub struct RawMethod {

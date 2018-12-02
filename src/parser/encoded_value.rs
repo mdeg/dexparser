@@ -1,5 +1,7 @@
 use super::{parse_uleb128, take_one};
 use super::error::*;
+use super::parse_data::parse_annotation_element_item;
+use super::raw_types::*;
 use byteorder::ByteOrder;
 
 named!(pub parse_encoded_value_item<&[u8], EncodedValue>,
@@ -22,6 +24,7 @@ fn parse_value(value: &[u8], value_type: u8) -> Result<((), EncodedValue), nom::
         EncodedValueType::Char => EncodedValue::Char(nom::le_u16(value)?.1),
         EncodedValueType::Int => EncodedValue::Int(nom::le_i32(value)?.1),
         EncodedValueType::Long => EncodedValue::Long(nom::le_i64(value)?.1),
+        // TODO: i think I can just use nom for this?
         EncodedValueType::Float => EncodedValue::Float(byteorder::LittleEndian::read_f32(&take!(value, 4)?.1)),
         EncodedValueType::Double => EncodedValue::Double(byteorder::LittleEndian::read_f64(&take!(value, 4)?.1)),
         EncodedValueType::MethodType => EncodedValue::MethodType(nom::le_u32(value)?.1),
@@ -41,33 +44,12 @@ fn parse_value(value: &[u8], value_type: u8) -> Result<((), EncodedValue), nom::
     Ok(((), value))
 }
 
-#[derive(Debug)]
-pub struct RawEncodedAnnotationItem {
-    pub type_idx: u64,
-    size: u64,
-    pub elements: Vec<RawAnnotationElementItem>
-}
-
-#[derive(Debug)]
-pub struct RawAnnotationElementItem {
-    pub name_idx: u64,
-    pub value: EncodedValue
-}
-
 named!(pub parse_encoded_annotation_item<&[u8], RawEncodedAnnotationItem>,
     do_parse!(
         type_idx: call!(parse_uleb128) >>
         size: call!(parse_uleb128) >>
         elements: count!(call!(parse_annotation_element_item), size as usize) >>
         (RawEncodedAnnotationItem { type_idx, size, elements })
-    )
-);
-
-named!(parse_annotation_element_item<&[u8], RawAnnotationElementItem>,
-    do_parse!(
-        name_idx: call!(parse_uleb128)   >>
-        value: call!(parse_encoded_value_item)   >>
-        (RawAnnotationElementItem { name_idx, value })
     )
 );
 
@@ -94,7 +76,7 @@ pub enum EncodedValue {
     Boolean(bool)
 }
 
-named!(parse_encoded_array_item<&[u8], EncodedArrayItem>,
+named!(pub parse_encoded_array_item<&[u8], EncodedArrayItem>,
     do_parse!(
         size: call!(parse_uleb128)   >>
         values: count!(call!(parse_encoded_value_item), size as usize)  >>
@@ -151,7 +133,7 @@ impl EncodedValueType {
             0x1D => Ok(EncodedValueType::Annotation),
             0x1E => Ok(EncodedValueType::Null),
             0x1F => Ok(EncodedValueType::Boolean),
-            _ => Err(ParserErr::from(format!("Could not find encoded value type for 0x{:0X}", value)))
+            _ => Err(ParserErr::from(format!("Could not find encoded value type for 0x{:02X}", value)))
         }
     }
 }

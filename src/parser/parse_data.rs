@@ -238,12 +238,18 @@ fn transform_class_defs<'a>(data: &'a[u8], data_off: usize, cdis: &[RawClassDefi
             Some(ClassData { static_fields, instance_fields, direct_methods, virtual_methods })
         };
 
-        // TODO: static values
+        // TODO: where is CDI 6?
+        let static_values = if cdi.static_values_off == 0 {
+            None
+        } else {
+            // TODO: bug here - not sure if valuearg is included here?
+            Some(encoded_value::parse_encoded_array_item(&data[cdi.static_values_off as usize - data_off..])?.1)
+        };
 
         v.push(ClassDefinition {
             class_type, access_flags, superclass,
             interfaces, source_file_name, annotations,
-            class_data });
+            class_data, static_values });
     }
 
     Ok((data, v))
@@ -272,7 +278,7 @@ e: nom::Endianness) -> nom::IResult<&'a[u8], Code> {
     let debug_info = if raw.debug_info_off == 0 {
         None
     } else {
-        let rdi = parse_debug_info_item(&data[raw.debug_info_off as usize - data_off ..], e)?.1;
+        let rdi = parse_debug_info_item(&data[raw.debug_info_off as usize - data_off ..])?.1;
 
         Some(DebugInfo {
             line_start: rdi.line_start,
@@ -285,11 +291,11 @@ e: nom::Endianness) -> nom::IResult<&'a[u8], Code> {
         let mut tries = Vec::with_capacity(raw_tries.len());
         for raw_try in raw_tries {
 
-            let code_units = count!(&data[raw_try.start_addr as usize - data_off ..],
-                            u16!(e), raw_try.insn_count as usize)?.1;
+            let code_units = parse_code_units(&data[raw_try.start_addr as usize - data_off ..],
+                                              raw_try.insn_count as usize, e)?.1;
 
             let handler = {
-                let rh = parse_encoded_catch_handler_list(&data[raw_try.handler_off as usize - data_off ..])?.1;
+                let rh = peek!(&data[raw_try.handler_off as usize - data_off ..], parse_encoded_catch_handler_list)?.1;
                 transform_encoded_catch_handler_list(rh, &ti)
             };
 
@@ -359,7 +365,7 @@ fn transform_encoded_catch_handler_list(rh: RawEncodedCatchHandlerList, ti: &[Rc
 }
 
 // Docs: debug_info_item
-named_args!(parse_debug_info_item(e: nom::Endianness)<&[u8], RawDebugInfoItem>,
+named!(parse_debug_info_item<&[u8], RawDebugInfoItem>,
     peek!(
         do_parse!(
             line_start: call!(parse_uleb128)    >>
@@ -391,6 +397,8 @@ named_args!(parse_code_item(e: nom::Endianness)<&[u8], RawCodeItem>,
         )
     )
 );
+
+named_args!(parse_code_units(size: usize, e: nom::Endianness)<&[u8], Vec<u16>>, peek!(count!(u16!(e), size)));
 
 // Docs: try_item
 named_args!(parse_try_item(e: nom::Endianness)<&[u8], RawTryItem>,
@@ -454,29 +462,34 @@ named!(parse_annotation_item<&[u8], AnnotationItem>,
     )
 );
 
+// Docs: annotation_element_item
+named!(pub parse_annotation_element_item<&[u8], RawAnnotationElementItem>,
+    do_parse!(
+        name_idx: call!(parse_uleb128)   >>
+        value: call!(encoded_value::parse_encoded_value_item)   >>
+        (RawAnnotationElementItem { name_idx, value })
+    )
+);
+
 // Docs: annotation_set_ref_list
 named_args!(parse_annotation_set_ref_list(e: nom::Endianness)<&[u8], RawAnnotationSetRefList>,
     peek!(
         do_parse!(
             size: u32!(e)   >>
-            entries: count!(call!(parse_annotation_set_ref_item, e), size as usize)     >>
+            // Docs: annotation_set_ref_item
+            entries: count!(u32!(e), size as usize)     >>
             (RawAnnotationSetRefList { size, entries })
         )
     )
 );
-
-// Docs: annotation_set_ref_item
-named_args!(parse_annotation_set_ref_item(e: nom::Endianness)<&[u8], u32>, peek!(u32!(e)));
-
-// Docs: annotation_offset_item
-named_args!(parse_annotation_offset_item(e: nom::Endianness)<&[u8], u32>, peek!(u32!(e)));
 
 // Docs: annotation_set_item
 named_args!(parse_annotation_set_item(e: nom::Endianness)<&[u8], RawAnnotationSetItem>,
     peek!(
         do_parse!(
             size: u32!(e)                               >>
-            entries: count!(call!(parse_annotation_offset_item, e), size as usize)     >>
+            // Docs: annotation_offset_item
+            entries: count!(u32!(e), size as usize)     >>
             (RawAnnotationSetItem { size, entries })
         )
     )
@@ -497,7 +510,6 @@ named!(parse_class_data_item<&[u8], RawClassDataItem>,
             (RawClassDataItem { static_fields_size, instance_fields_size, direct_methods_size,
             virtual_methods_size, direct_methods, instance_fields, static_fields, virtual_methods })
         )
-
     )
 );
 

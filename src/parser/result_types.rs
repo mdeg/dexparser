@@ -110,7 +110,7 @@ pub struct ClassDefinition {
     pub source_file_name: Option<Rc<StringData>>,
     pub annotations: Option<Annotations>,
     pub class_data: Option<ClassData>,
-    //TODO: static values
+    pub static_values: Option<encoded_value::EncodedArrayItem>
 }
 
 #[derive(Debug)]
@@ -172,8 +172,8 @@ pub struct FieldAnnotation {
 #[derive(Debug)]
 pub struct AnnotationItem {
     pub visibility: Visibility,
-    // TODO
-    pub annotation: encoded_value::RawEncodedAnnotationItem
+    // TODO: de-raw this
+    pub annotation: super::raw_types::RawEncodedAnnotationItem
 }
 
 // TODO
