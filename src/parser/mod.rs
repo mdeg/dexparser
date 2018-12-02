@@ -337,84 +337,51 @@ impl AccessFlag {
     fn parse(value: u32, type_: AnnotationType) -> Vec<Self> {
         let mut v = vec!();
 
-        // Break the integer into component bytes
-        let bytes = [
-            ((value >> 24) & 0xFF) as u8,
-            ((value >> 16) & 0xFF) as u8,
-            ((value >> 8) & 0xFF) as u8,
-            (value & 0xFF) as u8,
-        ];
-
-        let bits = bit_vec::BitVec::from_bytes(&bytes);
-        // First byte
-        if Some(true) == bits.get(0) {
-            v.push(AccessFlag::ACC_PUBLIC);
-        }
-        if Some(true) == bits.get(1) {
-            v.push(AccessFlag::ACC_PRIVATE);
-        }
-        if Some(true) == bits.get(2) {
-            v.push(AccessFlag::ACC_PROTECTED);
-        }
-        if Some(true) == bits.get(3) {
-            v.push(AccessFlag::ACC_STATIC);
-        }
-        if Some(true) == bits.get(4) {
-            v.push(AccessFlag::ACC_FINAL);
-        }
-        if Some(true) == bits.get(5) {
-            v.push(AccessFlag::ACC_SYNCHRONIZED);
-        }
-        if Some(true) == bits.get(6) {
+        if value & 0x01 != 0 { v.push(AccessFlag::ACC_PUBLIC); }
+        if value & 0x02 != 0 { v.push(AccessFlag::ACC_PRIVATE); }
+        if value & 0x04 != 0 { v.push(AccessFlag::ACC_PROTECTED); }
+        if value & 0x08 != 0 { v.push(AccessFlag::ACC_STATIC); }
+        if value & 0x10 != 0 { v.push(AccessFlag::ACC_FINAL); }
+        if value & 0x20 != 0 { v.push(AccessFlag::ACC_SYNCHRONIZED); }
+        if value & 0x40 != 0 {
             if type_ == AnnotationType::Field {
                 v.push(AccessFlag::ACC_VOLATILE);
             } else if type_ == AnnotationType::Method {
                 v.push(AccessFlag::ACC_BRIDGE);
             }
         }
-        if Some(true) == bits.get(7) {
+        if value & 0x80 != 0 {
             if type_ == AnnotationType::Field {
                 v.push(AccessFlag::ACC_TRANSIENT);
             } else if type_ == AnnotationType::Method {
                 v.push(AccessFlag::ACC_VARARGS);
             }
         }
-
-        // Second byte
-        if Some(true) == bits.get(8) {
-            v.push(AccessFlag::ACC_NATIVE);
-        }
-        if Some(true) == bits.get(9) {
-            v.push(AccessFlag::ACC_INTERFACE);
-        }
-        if Some(true) == bits.get(10) {
-            v.push(AccessFlag::ACC_ABSTRACT);
-        }
-        if Some(true) == bits.get(11) {
-            v.push(AccessFlag::ACC_STRICT);
-        }
-        if Some(true) == bits.get(12) {
-            v.push(AccessFlag::ACC_SYNTHETIC);
-        }
-        if Some(true) == bits.get(13) {
-            v.push(AccessFlag::ACC_ANNOTATION);
-        }
-        if Some(true) == bits.get(14) {
-            v.push(AccessFlag::ACC_ENUM);
-        }
-        if Some(true) == bits.get(15) {
-            v.push(AccessFlag::UNUSED);
-        }
-        if Some(true) == bits.get(16) {
-            v.push(AccessFlag::ACC_CONSTRUCTOR);
-        }
-        // Third byte
-        if Some(true) == bits.get(17) {
-            v.push(AccessFlag::ACC_DECLARED_SYNCHRONIZED);
-        }
-
-        // TODO: some kind of assert here - use count_1s
+        if value & 0x100 != 0 { v.push(AccessFlag::ACC_NATIVE); }
+        if value & 0x200 != 0 { v.push(AccessFlag::ACC_INTERFACE); }
+        if value & 0x400 != 0 { v.push(AccessFlag::ACC_ABSTRACT); }
+        if value & 0x800 != 0 { v.push(AccessFlag::ACC_STRICT); }
+        if value & 0x1000 != 0 { v.push(AccessFlag::ACC_SYNTHETIC); }
+        if value & 0x2000 != 0 { v.push(AccessFlag::ACC_ANNOTATION); }
+        if value & 0x4000 != 0 { v.push(AccessFlag::ACC_ENUM); }
+        if value & 0x8000 != 0 { v.push(AccessFlag::UNUSED); }
+        if value & 0x10000 != 0 { v.push(AccessFlag::ACC_CONSTRUCTOR); }
+        if value & 0x20000 != 0 { v.push(AccessFlag::ACC_DECLARED_SYNCHRONIZED); }
 
         v
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    // TODO: test endianness
+    fn test_access_flag_bitmasking() {
+        // Christmas tree
+        assert_eq!(AccessFlag::parse(std::u32::MAX, AnnotationType::Method).len(), 18);
+        // No flags
+        assert_eq!(AccessFlag::parse(std::u32::MIN, AnnotationType::Method).len(), 0);
     }
 }
