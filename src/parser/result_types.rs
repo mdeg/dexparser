@@ -143,11 +143,6 @@ pub struct EncodedMethod {
 }
 
 #[derive(Debug)]
-pub struct Code {
-    // TODO
-}
-
-#[derive(Debug)]
 pub struct MethodAnnotation {
     pub method: Rc<Method>,
     pub annotations: Vec<AnnotationItem>
@@ -203,6 +198,71 @@ impl fmt::Display for Visibility {
             Visibility::SYSTEM => write!(f, "system")
         }
     }
+}
+
+// Docs: code_item
+#[derive(Debug)]
+pub struct Code {
+    // number of registers used by this code
+    pub registers_size: u16,
+    // number of words of incoming arguments
+    pub ins_size: u16,
+    // number of words of outgoing argument space
+    pub outs_size: u16,
+    pub debug_info: Option<DebugInfo>,
+    pub insns: Vec<u16>,
+    pub tries: Option<Vec<TryItem>>,
+    pub handlers: Option<Vec<EncodedCatchHandler>>
+}
+
+// Docs: try_item
+#[derive(Debug)]
+pub struct TryItem {
+    pub code_units: Vec<u16>,
+    pub handler: Vec<EncodedCatchHandler>
+}
+
+// Docs: encoded_catch_handler
+#[derive(Debug)]
+pub struct EncodedCatchHandler {
+    pub handlers: Vec<EncodedTypeAddrPair>,
+    // bytecode
+    // only present if size is non-positive
+    pub catch_all_addr: Option<u64>
+}
+
+// Docs: encoded_type_addr_pair
+#[derive(Debug)]
+pub struct EncodedTypeAddrPair {
+    // index into type_ids list for the type of exception to catch
+    pub type_: Rc<TypeIdentifier>,
+    // bytecode address of associated exception handler
+    pub addr: u64
+}
+
+// Docs: debug_info_item
+#[derive(Debug)]
+pub struct DebugInfo {
+    pub line_start: u64,
+    pub parameter_names: Vec<u64>,
+    pub bytecode: Vec<DebugItemBytecodes>
+}
+
+//noinspection RsEnumVariantNaming
+#[allow(non_camel_case_types)]
+#[derive(Debug)]
+pub enum DebugItemBytecodes {
+    DBG_END_SEQUENCE,
+    DBG_ADVANCE_PC,
+    DBG_ADVANCE_LINE,
+    DBG_START_LOCAL,
+    DBG_START_LOCAL_EXTENDED,
+    DBG_END_LOCAL,
+    DBG_RESTART_LOCAL,
+    DBG_SET_PROLOGUE_END,
+    DBG_SET_EPILOGUE_BEGIN,
+    DBG_SET_FILE,
+    SPECIAL_OPCODE(u8)
 }
 
 //noinspection RsEnumVariantNaming

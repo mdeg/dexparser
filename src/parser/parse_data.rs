@@ -118,6 +118,7 @@ fn transform_annotations<'a>(data: &'a[u8], off: usize, data_off: usize, sd: &[R
         Some(class_annotations)
     };
 
+    // TODO: break this into a function
     let field_annotations = match adi.fld_annot {
         Some(raw_field_annotations) => {
             let mut fa = vec!();
@@ -227,15 +228,17 @@ fn transform_class_defs<'a>(data: &'a[u8], data_off: usize, cdis: &[RawClassDefi
         let class_data = if cdi.class_data_off == 0 {
             None
         } else {
-            let class_data = parse_class_data_item(&data[cdi.class_data_off as usize - data_off..], e)?.1;
+            let class_data = parse_class_data_item(&data[cdi.class_data_off as usize - data_off..])?.1;
 
             let static_fields = transform_encoded_fields(&class_data.static_fields, &fi);
             let instance_fields = transform_encoded_fields(&class_data.instance_fields, &fi);
-            let direct_methods = transform_encoded_methods(&data, data_off, &class_data.direct_methods, &mtd, e)?.1;
-            let virtual_methods = transform_encoded_methods(&data, data_off, &class_data.virtual_methods, &mtd, e)?.1;
+            let direct_methods = transform_encoded_methods(&data, data_off, &class_data.direct_methods, &mtd, &ti, e)?.1;
+            let virtual_methods = transform_encoded_methods(&data, data_off, &class_data.virtual_methods, &mtd, &ti, e)?.1;
 
             Some(ClassData { static_fields, instance_fields, direct_methods, virtual_methods })
         };
+
+        // TODO: static values
 
         v.push(ClassDefinition {
             class_type, access_flags, superclass,
@@ -263,19 +266,71 @@ fn transform_encoded_fields(raw: &[RawEncodedField], fi: &[Rc<Field>]) -> Vec<En
     fields
 }
 
+fn transform_code_item<'a>(data: &'a[u8], data_off: usize, raw: RawCodeItem, ti: &[Rc<TypeIdentifier>],
+e: nom::Endianness) -> nom::IResult<&'a[u8], Code> {
+
+    let debug_info = if raw.debug_info_off == 0 {
+        None
+    } else {
+        let rdi = parse_debug_info_item(&data[raw.debug_info_off as usize - data_off ..], e)?.1;
+
+        Some(DebugInfo {
+            line_start: rdi.line_start,
+            parameter_names: rdi.parameter_names,
+            bytecode: rdi.bytecode.into_iter().map(DebugItemBytecodes::parse).collect()
+        })
+    };
+
+    let tries = if let Some(raw_tries) = raw.tries {
+        let mut tries = Vec::with_capacity(raw_tries.len());
+        for raw_try in raw_tries {
+
+            let code_units = count!(&data[raw_try.start_addr as usize - data_off ..],
+                            u16!(e), raw_try.insn_count as usize)?.1;
+
+            let handler = {
+                let rh = parse_encoded_catch_handler_list(&data[raw_try.handler_off as usize - data_off ..])?.1;
+                transform_encoded_catch_handler_list(rh, &ti)
+            };
+
+            tries.push(TryItem {
+                code_units,
+                handler
+            });
+        }
+        Some(tries)
+    } else {
+        None
+    };
+
+    let handlers = if let Some(rh) = raw.handlers {
+        Some(transform_encoded_catch_handler_list(rh, &ti))
+    } else {
+        None
+    };
+
+    Ok((data, Code {
+        registers_size: raw.registers_size,
+        ins_size: raw.ins_size,
+        outs_size: raw.outs_size,
+        debug_info,
+        insns: raw.insns,
+        tries,
+        handlers
+    }))
+}
+
 fn transform_encoded_methods<'a>(data: &'a[u8], data_off: usize, raw: &[RawEncodedMethod],
-                                 mtd: &[Rc<Method>], e: nom::Endianness) -> nom::IResult<&'a[u8], Vec<EncodedMethod>> {
+                                 mtd: &[Rc<Method>], ti: &[Rc<TypeIdentifier>], e: nom::Endianness)
+                                    -> nom::IResult<&'a[u8], Vec<EncodedMethod>> {
     let mut methods = vec!();
     let mut prev_offset = 0;
     for method in raw {
         let code = if method.code_off == 0 {
             None
         } else {
-            let raw_code_item = parse_code_item(&data[method.code_off as usize - data_off ..], e)?.1;
-
-            // TODO
-
-            Some(Code { })
+            let ci = parse_code_item(&data[method.code_off as usize - data_off ..], e)?.1;
+            Some(transform_code_item(data, data_off, ci, &ti, e)?.1)
         };
 
         methods.push(EncodedMethod {
@@ -289,6 +344,33 @@ fn transform_encoded_methods<'a>(data: &'a[u8], data_off: usize, raw: &[RawEncod
 
     Ok((data, methods))
 }
+
+// We can destructure out the RawEncodedCatchHandlerList and just return a Vec of EncodedCatchHandler's
+fn transform_encoded_catch_handler_list(rh: RawEncodedCatchHandlerList, ti: &[Rc<TypeIdentifier>]) -> Vec<EncodedCatchHandler> {
+    rh.list.into_iter()
+        .map(|raw| EncodedCatchHandler {
+            handlers: raw.handlers.into_iter()
+                .map(|raw| EncodedTypeAddrPair {
+                    type_: ti[raw.type_idx as usize].clone(),
+                    addr: raw.addr
+                }).collect(),
+            catch_all_addr: raw.catch_all_addr
+        }).collect()
+}
+
+// Docs: debug_info_item
+named_args!(parse_debug_info_item(e: nom::Endianness)<&[u8], RawDebugInfoItem>,
+    peek!(
+        do_parse!(
+            line_start: call!(parse_uleb128)    >>
+            parameters_size: call!(parse_uleb128)   >>
+            parameter_names: count!(call!(parse_uleb128p1), parameters_size as usize)    >>
+            // TODO: take one byte extra to get the end sequence
+            bytecode: map!(take_until!("\0"), |i| { i.to_vec() })    >>
+            (RawDebugInfoItem { line_start, parameters_size, parameter_names, bytecode })
+        )
+    )
+);
 
 // Docs: code_item
 named_args!(parse_code_item(e: nom::Endianness)<&[u8], RawCodeItem>,
@@ -401,7 +483,7 @@ named_args!(parse_annotation_set_item(e: nom::Endianness)<&[u8], RawAnnotationSe
 );
 
 // Docs: class_data_item
-named_args!(parse_class_data_item(e: nom::Endianness)<&[u8], RawClassDataItem>,
+named!(parse_class_data_item<&[u8], RawClassDataItem>,
     peek!(
         do_parse!(
             static_fields_size: call!(parse_uleb128)    >>
@@ -419,6 +501,7 @@ named_args!(parse_class_data_item(e: nom::Endianness)<&[u8], RawClassDataItem>,
     )
 );
 
+// Docs: encoded_field
 named!(parse_encoded_field<&[u8], RawEncodedField>,
     do_parse!(
         field_idx_diff: call!(parse_uleb128)    >>
@@ -427,6 +510,7 @@ named!(parse_encoded_field<&[u8], RawEncodedField>,
     )
 );
 
+// Docs: encoded_method
 named!(parse_encoded_method<&[u8], RawEncodedMethod>,
     do_parse!(
         method_idx_diff: call!(parse_uleb128)   >>
@@ -435,3 +519,21 @@ named!(parse_encoded_method<&[u8], RawEncodedMethod>,
         (RawEncodedMethod { method_idx_diff, access_flags, code_off })
     )
 );
+
+impl DebugItemBytecodes {
+    pub fn parse(value: u8) -> Self {
+        match value {
+            0x00 => DebugItemBytecodes::DBG_END_SEQUENCE,
+            0x01 => DebugItemBytecodes::DBG_ADVANCE_PC,
+            0x02 => DebugItemBytecodes::DBG_ADVANCE_LINE,
+            0x03 => DebugItemBytecodes::DBG_START_LOCAL,
+            0x04 => DebugItemBytecodes::DBG_START_LOCAL_EXTENDED,
+            0x05 => DebugItemBytecodes::DBG_END_LOCAL,
+            0x06 => DebugItemBytecodes::DBG_RESTART_LOCAL,
+            0x07 => DebugItemBytecodes::DBG_SET_PROLOGUE_END,
+            0x08 => DebugItemBytecodes::DBG_SET_EPILOGUE_BEGIN,
+            0x09 => DebugItemBytecodes::DBG_SET_FILE,
+            _ => DebugItemBytecodes::SPECIAL_OPCODE(value)
+        }
+    }
+}

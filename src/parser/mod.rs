@@ -56,16 +56,16 @@ fn parse_dex_file(input: &[u8], e: nom::Endianness) -> Result<(&[u8], RawDexFile
         // For this version and higher, we'll need to peek at the map list to know their size for parsing
         // TODO: versioning
         map_list: cond!(true, peek!(call!(parse_map_list, &input[header.map_off as usize - (header.file_size as usize - input.len()) ..], e)))    >>
-        string_id_items: dbg!(call!(parse_string_id_items, header.string_ids_size as usize, e)) >>
-        type_id_items: dbg!(call!(parse_u32_list, header.type_ids_size as usize, e))  >>
-        proto_id_items: dbg!(call!(parse_proto_id_items, header.proto_ids_size as usize, e)) >>
-        field_id_items: dbg!(call!(parse_field_id_items, header.field_ids_size as usize, e))    >>
-        method_id_items: dbg!(call!(parse_method_id_items, header.method_ids_size as usize, e))  >>
-        class_def_items: dbg!(call!(parse_class_def_items, header.class_defs_size as usize, e)) >>
-        call_site_idxs: dbg!(cond!(map_list.is_some(), call!(parse_u32_list, map_list.as_ref().unwrap().list.iter().filter(|item| item.type_ == MapListItemType::CALL_SITE_ID_ITEM).count(), e))) >>
-        method_handle_idxs: dbg!(cond!(map_list.is_some(), call!(parse_method_handle_items, map_list.as_ref().unwrap().list.iter().filter(|item| item.type_  == MapListItemType::METHOD_HANDLE_ITEM).count(), e)))   >>
-        data: dbg!(map!(take!(header.data_size), |d| { d.to_vec() }))  >>
-        link_data: cond!(header.link_off > 0, dbg!(map!(eof!(), |ld| { ld.to_vec() })))   >>
+        string_id_items: call!(parse_string_id_items, header.string_ids_size as usize, e) >>
+        type_id_items: call!(parse_u32_list, header.type_ids_size as usize, e)  >>
+        proto_id_items: call!(parse_proto_id_items, header.proto_ids_size as usize, e) >>
+        field_id_items: call!(parse_field_id_items, header.field_ids_size as usize, e)   >>
+        method_id_items: call!(parse_method_id_items, header.method_ids_size as usize, e)  >>
+        class_def_items: call!(parse_class_def_items, header.class_defs_size as usize, e) >>
+        call_site_idxs: cond!(map_list.is_some(), call!(parse_u32_list, map_list.as_ref().unwrap().list.iter().filter(|item| item.type_ == MapListItemType::CALL_SITE_ID_ITEM).count(), e)) >>
+        method_handle_idxs: cond!(map_list.is_some(), call!(parse_method_handle_items, map_list.as_ref().unwrap().list.iter().filter(|item| item.type_  == MapListItemType::METHOD_HANDLE_ITEM).count(), e))   >>
+        data: map!(take!(header.data_size), |d| { d.to_vec() })  >>
+        link_data: cond!(header.link_off > 0, map!(eof!(), |ld| { ld.to_vec() }))   >>
         (RawDexFile { header, string_id_items, type_id_items, proto_id_items, field_id_items,
             method_id_items, class_def_items, call_site_idxs, method_handle_idxs, data, link_data })
     )
@@ -74,7 +74,7 @@ fn parse_dex_file(input: &[u8], e: nom::Endianness) -> Result<(&[u8], RawDexFile
 
 named!(take_one<&[u8], u8>, map!(take!(1), |x| { x[0] }));
 
-// Length of uleb128 value is determined by the
+// TODO: write this in nom
 pub fn determine_leb128_length(input: &[u8]) -> usize {
     input.iter()
         .take_while(|byte| (*byte & 0x80) != 0)
@@ -96,6 +96,11 @@ named!(parse_sleb128<&[u8], i64>,
         value: map_res!(take!(len), read_sleb128)          >>
         (value)
     )
+);
+
+// uleb128p1 is uleb128 plus one - so subtract one from uleb128
+named!(parse_uleb128p1<&[u8], u64>,
+    call!(parse_uleb128)
 );
 
 // nom gives us immutable byte slices, but the leb128 library requires mutable slices

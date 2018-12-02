@@ -266,9 +266,8 @@ pub struct RawEncodedCatchHandlerList {
 // Docs: encoded_catch_handler
 #[derive(Debug)]
 pub struct RawEncodedCatchHandler {
-    //sleb128???
+    // Size of the handlers list
     pub size: i64,
-
     pub handlers: Vec<RawEncodedTypeAddrPair>,
     // bytecode
     // only present if size is non-positive
@@ -282,6 +281,15 @@ pub struct RawEncodedTypeAddrPair {
     pub type_idx: u64,
     // bytecode address of associated exception handler
     pub addr: u64
+}
+
+// Docs: debug_info_item
+#[derive(Debug)]
+pub struct RawDebugInfoItem {
+    pub line_start: u64,
+    pub parameters_size: u64,
+    pub parameter_names: Vec<u64>,
+    pub bytecode: Vec<u8>
 }
 
 //noinspection RsEnumVariantNaming
