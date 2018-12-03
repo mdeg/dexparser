@@ -24,9 +24,8 @@ fn parse_value(value: &[u8], value_type: u8) -> Result<((), EncodedValue), nom::
         EncodedValueType::Char => EncodedValue::Char(nom::le_u16(value)?.1),
         EncodedValueType::Int => EncodedValue::Int(nom::le_i32(value)?.1),
         EncodedValueType::Long => EncodedValue::Long(nom::le_i64(value)?.1),
-        // TODO: i think I can just use nom for this?
         EncodedValueType::Float => EncodedValue::Float(byteorder::LittleEndian::read_f32(&take!(value, 4)?.1)),
-        EncodedValueType::Double => EncodedValue::Double(byteorder::LittleEndian::read_f64(&take!(value, 4)?.1)),
+        EncodedValueType::Double => EncodedValue::Double(byteorder::LittleEndian::read_f64(&take!(value, 8)?.1)),
         EncodedValueType::MethodType => EncodedValue::MethodType(nom::le_u32(value)?.1),
         EncodedValueType::MethodHandle => EncodedValue::MethodHandle(nom::le_u32(value)?.1),
         EncodedValueType::String => EncodedValue::String(nom::le_u32(value)?.1),
@@ -156,7 +155,7 @@ mod tests {
     #[test]
     fn test_invalid_encoded_value_item_type() {
         let mut writer = vec!();
-        writer.write_u8(0b00000001).unwrap();
+        writer.write_u8(0x01).unwrap();
         let err = parse_encoded_value_item(&writer);
         assert!(err.is_err());
         // TODO
@@ -189,13 +188,117 @@ mod tests {
         // value type (byte)
         writer.write_u8(0x02).unwrap();
         // value
-        writer.write_i16::<LittleEndian>(123).unwrap();
+        writer.write_i16::<LittleEndian>(123_i16).unwrap();
 
         let res = parse_encoded_value_item(&writer).unwrap();
 
         // ensure nonconsumption
         assert_eq!(res.0.len(), writer.len());
-        assert_eq!(res.1, EncodedValue::Short(123))
+        assert_eq!(res.1, EncodedValue::Short(123_i16))
     }
 
+    #[test]
+    fn test_parse_char_value() {
+        let mut writer = vec!();
+        // value type (byte)
+        writer.write_u8(0x03).unwrap();
+        // value
+        writer.write_u16::<LittleEndian>('a' as u16).unwrap();
+
+        let res = parse_encoded_value_item(&writer).unwrap();
+
+        // ensure nonconsumption
+        assert_eq!(res.0.len(), writer.len());
+        assert_eq!(res.1, EncodedValue::Char('a' as u16))
+    }
+
+    #[test]
+    fn test_parse_int_value() {
+        let mut writer = vec!();
+        // value type (byte)
+        writer.write_u8(0x04).unwrap();
+        // value
+        writer.write_i32::<LittleEndian>(123_i32).unwrap();
+
+        let res = parse_encoded_value_item(&writer).unwrap();
+
+        // ensure nonconsumption
+        assert_eq!(res.0.len(), writer.len());
+        assert_eq!(res.1, EncodedValue::Int(123_i32))
+    }
+
+    #[test]
+    fn test_parse_long_value() {
+        let mut writer = vec!();
+        // value type (byte)
+        writer.write_u8(0x06).unwrap();
+        // value
+        writer.write_i64::<LittleEndian>(123_i64).unwrap();
+
+        let res = parse_encoded_value_item(&writer).unwrap();
+
+        // ensure nonconsumption
+        assert_eq!(res.0.len(), writer.len());
+        assert_eq!(res.1, EncodedValue::Long(123_i64))
+    }
+
+    #[test]
+    fn test_parse_float_value() {
+        let mut writer = vec!();
+        // value type (byte)
+        writer.write_u8(0x10).unwrap();
+        // value
+        writer.write_f32::<LittleEndian>(123_f32).unwrap();
+
+        let res = parse_encoded_value_item(&writer).unwrap();
+
+        // ensure nonconsumption
+        assert_eq!(res.0.len(), writer.len());
+        assert_eq!(res.1, EncodedValue::Float(123_f32))
+    }
+
+    #[test]
+    fn test_parse_double_value() {
+        let mut writer = vec!();
+        // value type (byte)
+        writer.write_u8(0x11).unwrap();
+        // value
+        writer.write_f64::<LittleEndian>(123_f64).unwrap();
+
+        let res = parse_encoded_value_item(&writer).unwrap();
+
+        // ensure nonconsumption
+        assert_eq!(res.0.len(), writer.len());
+        assert_eq!(res.1, EncodedValue::Double(123_f64))
+    }
+
+    #[test]
+    fn test_parse_method_type() {
+        let mut writer = vec!();
+        // value type (byte)
+        writer.write_u8(0x15).unwrap();
+        // value
+        writer.write_u32::<LittleEndian>(123_u32).unwrap();
+
+        let res = parse_encoded_value_item(&writer).unwrap();
+
+        // ensure nonconsumption
+        assert_eq!(res.0.len(), writer.len());
+        assert_eq!(res.1, EncodedValue::MethodType(123_u32))
+    }
+
+    #[test]
+    fn test_parse_method_handle() {
+        let mut writer = vec!();
+        // value type (byte)
+        writer.write_u8(0x16).unwrap();
+        // value
+        writer.write_u32::<LittleEndian>(123_u32).unwrap();
+
+        let res = parse_encoded_value_item(&writer).unwrap();
+
+        // ensure nonconsumption
+        assert_eq!(res.0.len(), writer.len());
+        assert_eq!(res.1, EncodedValue::MethodHandle(123_u32))
+    }
 }
