@@ -16,7 +16,8 @@ named!(pub parse_encoded_value_item<&[u8], EncodedValue>,
 
 fn parse_value(value: &[u8], value_type: u8) -> Result<((), EncodedValue), nom::Err<&[u8]>> {
     // The high order 3 bits of the value type may contain useful size information or data
-    let value_arg = value_type << 5;
+    let value_arg = (value_type & 0xE0) >> 5;
+    println!("!value_arg: {:#b} {} \n!", value_arg, value_arg as i32);
 
     let value = match EncodedValueType::parse(value_type & 0x1F)? {
         EncodedValueType::Byte => EncodedValue::Byte(take!(value, 1)?.1[0]),
@@ -37,7 +38,7 @@ fn parse_value(value: &[u8], value_type: u8) -> Result<((), EncodedValue), nom::
         EncodedValueType::Annotation => EncodedValue::Annotation(parse_encoded_annotation_item(value)?.1),
         EncodedValueType::Null => EncodedValue::Null,
         // The value for boolean types is the last bit of the value arg
-        EncodedValueType::Boolean => EncodedValue::Boolean((value_arg & 0x01) == 1)
+        EncodedValueType::Boolean => EncodedValue::Boolean(value_arg != 0)
     };
 
     Ok(((), value))
@@ -300,5 +301,127 @@ mod tests {
         // ensure nonconsumption
         assert_eq!(res.0.len(), writer.len());
         assert_eq!(res.1, EncodedValue::MethodHandle(123_u32))
+    }
+
+    #[test]
+    fn test_parse_string() {
+        let mut writer = vec!();
+        // value type (byte)
+        writer.write_u8(0x17).unwrap();
+        // value
+        writer.write_u32::<LittleEndian>(123_u32).unwrap();
+
+        let res = parse_encoded_value_item(&writer).unwrap();
+
+        // ensure nonconsumption
+        assert_eq!(res.0.len(), writer.len());
+        assert_eq!(res.1, EncodedValue::String(123_u32))
+    }
+
+    #[test]
+    fn test_parse_type() {
+        let mut writer = vec!();
+        // value type (byte)
+        writer.write_u8(0x18).unwrap();
+        // value
+        writer.write_u32::<LittleEndian>(123_u32).unwrap();
+
+        let res = parse_encoded_value_item(&writer).unwrap();
+
+        // ensure nonconsumption
+        assert_eq!(res.0.len(), writer.len());
+        assert_eq!(res.1, EncodedValue::Type(123_u32))
+    }
+
+    #[test]
+    fn test_parse_field() {
+        let mut writer = vec!();
+        // value type (byte)
+        writer.write_u8(0x19).unwrap();
+        // value
+        writer.write_u32::<LittleEndian>(123_u32).unwrap();
+
+        let res = parse_encoded_value_item(&writer).unwrap();
+
+        // ensure nonconsumption
+        assert_eq!(res.0.len(), writer.len());
+        assert_eq!(res.1, EncodedValue::Field(123_u32))
+    }
+
+    #[test]
+    fn test_parse_method() {
+        let mut writer = vec!();
+        // value type (byte)
+        writer.write_u8(0x1A).unwrap();
+        // value
+        writer.write_u32::<LittleEndian>(123_u32).unwrap();
+
+        let res = parse_encoded_value_item(&writer).unwrap();
+
+        // ensure nonconsumption
+        assert_eq!(res.0.len(), writer.len());
+        assert_eq!(res.1, EncodedValue::Method(123_u32))
+    }
+
+    #[test]
+    fn test_parse_enum() {
+        let mut writer = vec!();
+        // value type (byte)
+        writer.write_u8(0x1B).unwrap();
+        // value
+        writer.write_u32::<LittleEndian>(123_u32).unwrap();
+
+        let res = parse_encoded_value_item(&writer).unwrap();
+
+        // ensure nonconsumption
+        assert_eq!(res.0.len(), writer.len());
+        assert_eq!(res.1, EncodedValue::Enum(123_u32))
+    }
+
+    // TODO< array, annotation
+
+    #[test]
+    fn test_parse_null() {
+        let mut writer = vec!();
+        // value type (byte)
+        writer.write_u8(0x1E).unwrap();
+        // dud value - need to ensure this isnt read
+        writer.write_u8(0x01).unwrap();
+
+        let res = parse_encoded_value_item(&writer).unwrap();
+
+        // ensure nonconsumption
+        assert_eq!(res.0.len(), writer.len());
+        assert_eq!(res.1, EncodedValue::Null)
+    }
+
+    #[test]
+    fn test_parse_boolean() {
+        // true value
+        {
+            let mut writer = vec!();
+            // value type (byte) plus an extra bit for the boolean value
+            writer.write_u8(0b00111111).unwrap();
+
+            let res = parse_encoded_value_item(&writer).unwrap();
+
+            // ensure nonconsumption
+            assert_eq!(res.0.len(), writer.len());
+            assert_eq!(res.1, EncodedValue::Boolean(true))
+        }
+        // false value
+        {
+            let mut writer = vec!();
+            // value type (byte) plus an extra bit for the boolean value
+            writer.write_u8(0b00011111).unwrap();
+
+            println!("={:#b} {:#b}=", 0b00011111 & 0xE0, (0b00011111 & 0xE0) >> 5);
+
+            let res = parse_encoded_value_item(&writer).unwrap();
+
+            // ensure nonconsumption
+            assert_eq!(res.0.len(), writer.len());
+            assert_eq!(res.1, EncodedValue::Boolean(false))
+        }
     }
 }
