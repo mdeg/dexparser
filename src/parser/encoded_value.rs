@@ -16,9 +16,9 @@ named!(pub parse_encoded_value_item<&[u8], EncodedValue>,
 
 fn parse_value(value: &[u8], value_type: u8) -> Result<((), EncodedValue), nom::Err<&[u8]>> {
     // The high order 3 bits of the value type may contain useful size information or data
-    let value_arg = value_type >> 5;
+    let value_arg = value_type << 5;
 
-    let value = match EncodedValueType::parse(value_arg & 0x1F)? {
+    let value = match EncodedValueType::parse(value_type & 0x1F)? {
         EncodedValueType::Byte => EncodedValue::Byte(take!(value, 1)?.1[0]),
         EncodedValueType::Short => EncodedValue::Short(nom::le_i16(value)?.1),
         EncodedValueType::Char => EncodedValue::Char(nom::le_u16(value)?.1),
@@ -136,4 +136,66 @@ impl EncodedValueType {
             _ => Err(ParserErr::from(format!("Could not find encoded value type for 0x{:02X}", value)))
         }
     }
+}
+
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+    use byteorder::*;
+
+    #[test]
+    fn test_empty_encoded_value_item() {
+        let writer = vec!();
+        let err = parse_encoded_value_item(&writer);
+        assert!(err.is_err());
+        assert_eq!(err.err().unwrap(), nom::Err::Incomplete(nom::Needed::Size(1)));
+    }
+
+    #[test]
+    fn test_invalid_encoded_value_item_type() {
+        let mut writer = vec!();
+        writer.write_u8(0b00000001).unwrap();
+        let err = parse_encoded_value_item(&writer);
+        assert!(err.is_err());
+        // TODO
+//        assert_eq!(err.err().unwrap(), nom::Err::Failure);
+    }
+
+    #[test]
+    fn test_parse_byte_value() {
+        let mut writer = vec!();
+        // value type (byte)
+        writer.write_u8(0x00).unwrap();
+
+        // with no following byte value
+        let err = parse_encoded_value_item(&writer);
+        assert!(err.is_err());
+
+        // add in a value
+        writer.write_u8(0x01).unwrap();
+
+        let res = parse_encoded_value_item(&writer).unwrap();
+
+        // ensure nonconsumption
+        assert_eq!(res.0.len(), writer.len());
+        assert_eq!(res.1, EncodedValue::Byte(0x01));
+    }
+
+    #[test]
+    fn test_parse_short_value() {
+        let mut writer = vec!();
+        // value type (byte)
+        writer.write_u8(0x02).unwrap();
+        // value
+        writer.write_i16::<LittleEndian>(123).unwrap();
+
+        let res = parse_encoded_value_item(&writer).unwrap();
+
+        // ensure nonconsumption
+        assert_eq!(res.0.len(), writer.len());
+        assert_eq!(res.1, EncodedValue::Short(123))
+    }
+
 }

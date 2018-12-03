@@ -598,4 +598,7 @@ mod tests {
         assert_eq!(res.1, -1);
     }
 
+    // TODO: test parse_header
+
+    // TODO: test parse_dex_file
 }
