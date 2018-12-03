@@ -205,8 +205,7 @@ fn transform_class_defs<'a>(data: &'a[u8], data_off: usize, cdis: &[RawClassDefi
         let interfaces = if cdi.interfaces_off == 0 {
             None
         } else {
-            Some(parse_type_list(&data[cdi.interfaces_off as usize ..], e)?
-                .1
+            Some(parse_type_list(&data[cdi.interfaces_off as usize ..], e)?.1
                 .list
                 .into_iter()
                 .map(|idx| ti[idx as usize].clone())

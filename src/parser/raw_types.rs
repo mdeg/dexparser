@@ -1,3 +1,5 @@
+use super::{Uleb128, Sleb128};
+
 // Raw type of the DEX file
 //
 #[derive(Debug, PartialEq)]
@@ -79,10 +81,10 @@ pub struct RawHeader {
 
 #[derive(Debug, PartialEq)]
 pub struct RawClassDataItem {
-    pub static_fields_size: u64,
-    pub instance_fields_size: u64,
-    pub direct_methods_size: u64,
-    pub virtual_methods_size: u64,
+    pub static_fields_size: Uleb128,
+    pub instance_fields_size: Uleb128,
+    pub direct_methods_size: Uleb128,
+    pub virtual_methods_size: Uleb128,
     pub static_fields: Vec<RawEncodedField>,
     pub instance_fields: Vec<RawEncodedField>,
     pub direct_methods: Vec<RawEncodedMethod>,
@@ -91,15 +93,15 @@ pub struct RawClassDataItem {
 
 #[derive(Debug, PartialEq)]
 pub struct RawEncodedField {
-    pub field_idx_diff: u64,
-    pub access_flags: u64
+    pub field_idx_diff: Uleb128,
+    pub access_flags: Uleb128
 }
 
 #[derive(Debug, PartialEq)]
 pub struct RawEncodedMethod {
-    pub method_idx_diff: u64,
-    pub access_flags: u64,
-    pub code_off: u64
+    pub method_idx_diff: Uleb128,
+    pub access_flags: Uleb128,
+    pub code_off: Uleb128
 }
 
 #[derive(Debug, PartialEq)]
@@ -160,15 +162,15 @@ pub struct RawAnnotationSetRefList {
 
 #[derive(Debug, PartialEq)]
 pub struct RawEncodedAnnotationItem {
-    pub type_idx: u64,
-    pub size: u64,
+    pub type_idx: Uleb128,
+    pub size: Uleb128,
     pub elements: Vec<RawAnnotationElementItem>
 }
 
 // Docs: annotation_element_item
 #[derive(Debug, PartialEq)]
 pub struct RawAnnotationElementItem {
-    pub name_idx: u64,
+    pub name_idx: Uleb128,
     pub value: super::encoded_value::EncodedValue
 }
 
@@ -272,7 +274,7 @@ pub struct RawTryItem {
 #[derive(Debug, PartialEq)]
 pub struct RawEncodedCatchHandlerList {
     // size of the list
-    pub size: u64,
+    pub size: Uleb128,
     // list of encoded_catch_handlers
     pub list: Vec<RawEncodedCatchHandler>
 }
@@ -281,28 +283,28 @@ pub struct RawEncodedCatchHandlerList {
 #[derive(Debug, PartialEq)]
 pub struct RawEncodedCatchHandler {
     // Size of the handlers list
-    pub size: i64,
+    pub size: Sleb128,
     pub handlers: Vec<RawEncodedTypeAddrPair>,
     // bytecode
     // only present if size is non-positive
-    pub catch_all_addr: Option<u64>
+    pub catch_all_addr: Option<Uleb128>
 }
 
 // Docs: encoded_type_addr_pair
 #[derive(Debug, PartialEq)]
 pub struct RawEncodedTypeAddrPair {
     // index into type_ids list for the type of exception to catch
-    pub type_idx: u64,
+    pub type_idx: Uleb128,
     // bytecode address of associated exception handler
-    pub addr: u64
+    pub addr: Uleb128
 }
 
 // Docs: debug_info_item
 #[derive(Debug, PartialEq)]
 pub struct RawDebugInfoItem {
-    pub line_start: u64,
-    pub parameters_size: u64,
-    pub parameter_names: Vec<u64>,
+    pub line_start: Uleb128,
+    pub parameters_size: Uleb128,
+    pub parameter_names: Vec<Uleb128>,
     pub bytecode: Vec<u8>
 }
 

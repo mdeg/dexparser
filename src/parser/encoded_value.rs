@@ -86,7 +86,7 @@ named!(pub parse_encoded_array_item<&[u8], EncodedArrayItem>,
 
 #[derive(Debug, PartialEq)]
 pub struct EncodedArrayItem {
-    size: u64,
+    size: u32,
     values: Vec<EncodedValue>
 }
 

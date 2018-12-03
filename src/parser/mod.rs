@@ -11,13 +11,16 @@ use nom::*;
 use std::str;
 
 // The magic that starts a DEX file
-const DEX_FILE_MAGIC: [u8; 4] = [0x64, 0x65, 0x78, 0x0a];
+const DEX_FILE_MAGIC: [u8; 4] = [0x64, 0x65, 0x78, 0x0A];
 // Indicates standard (little-endian) encoding
 const ENDIAN_CONSTANT: [u8; 4] = [0x12, 0x34, 0x56, 0x78];
 // Indicates modified non-standard (big-endian) encoding
 const REVERSE_ENDIAN_CONSTANT: [u8; 4] = [0x78, 0x56, 0x34, 0x12];
 
 const NO_INDEX: u32 = 0xffffffff;
+
+type Uleb128 = u32;
+type Sleb128 = i32;
 
 pub fn parse(buffer: &[u8]) -> Result<DexFile, ParserErr> {
 
@@ -67,10 +70,8 @@ fn parse_dex_file(input: &[u8], e: nom::Endianness) -> Result<(&[u8], RawDexFile
     )
 }
 
-
 named!(take_one<&[u8], u8>, map!(take!(1), |x| { x[0] }));
 
-// TODO: write this in nom
 pub fn determine_leb128_length(input: &[u8]) -> usize {
     input.iter()
         .take_while(|byte| (*byte & 0x80) != 0)
@@ -78,35 +79,34 @@ pub fn determine_leb128_length(input: &[u8]) -> usize {
         + 1
 }
 
-named!(parse_uleb128<&[u8], u64>,
+named!(parse_uleb128<&[u8], Uleb128>,
     do_parse!(
-        len: peek!(map!(take!(5), determine_leb128_length))    >>
+        len: peek!(map!(alt_complete!(take!(5) | rest), determine_leb128_length))    >>
         value: map_res!(take!(len), read_uleb128)          >>
         (value)
     )
 );
 
-named!(parse_sleb128<&[u8], i64>,
+named!(parse_sleb128<&[u8], Sleb128>,
     do_parse!(
-        len: peek!(map!(take!(5), determine_leb128_length))    >>
+        len: peek!(map!(alt_complete!(take!(5) | rest), determine_leb128_length))    >>
         value: map_res!(take!(len), read_sleb128)          >>
         (value)
     )
 );
 
 // uleb128p1 is uleb128 plus one - so subtract one from uleb128
-named!(parse_uleb128p1<&[u8], u64>,
-    call!(parse_uleb128)
+named!(parse_uleb128p1<&[u8], Uleb128>,
+    map!(call!(parse_uleb128), |i| { i - 1 })
 );
 
-// nom gives us immutable byte slices, but the leb128 library requires mutable slices
-// No syntactically valid way to convert the two inside the macro so we'll make a wrapper function
-pub fn read_uleb128(input: &[u8]) -> Result<u64, leb128::read::Error> {
-    leb128::read::unsigned(&mut (input.clone()))
+// LEB128 only ever encodes 32-bit values in a .dex file
+pub fn read_uleb128(input: &[u8]) -> Result<Uleb128, leb128::read::Error> {
+    leb128::read::unsigned(&mut (input.clone())).map(|i| i as u32)
 }
 
-pub fn read_sleb128(input: &[u8]) -> Result<i64, leb128::read::Error> {
-    leb128::read::signed(&mut (input.clone()))
+pub fn read_sleb128(input: &[u8]) -> Result<Sleb128, leb128::read::Error> {
+    leb128::read::signed(&mut (input.clone())).map(|i| i as i32)
 }
 
 named_args!(parse_string_id_items(size: usize, e: nom::Endianness)<&[u8], Vec<u32>>,
@@ -539,4 +539,63 @@ mod tests {
             })
         });
     }
+
+    #[test]
+    fn test_parse_string_id_items() {
+        let mut writer = vec!();
+        writer.write_u32::<LittleEndian>(1).unwrap();
+        writer.write_u32::<LittleEndian>(2).unwrap();
+
+        let res = parse_string_id_items(&writer, 2, e).unwrap();
+
+        assert_eq!(res.0.len(), 0);
+        assert_eq!(res.1, vec!(1, 2));
+    }
+
+    #[test]
+    fn test_determine_leb128_length() {
+        assert_eq!(determine_leb128_length(&[0b00000001]), 1);
+        assert_eq!(determine_leb128_length(&[0b10000000, 0b00000001]), 2);
+        assert_eq!(determine_leb128_length(&[0b10000000, 0b11111111, 0b11111111, 0b11111111, 0b00000001]), 5);
+    }
+
+    #[test]
+    fn test_parse_uleb128() {
+        let mut res = parse_uleb128(&[0b00000001]).unwrap();
+        assert_eq!(res.1, 1);
+
+        res = parse_uleb128(&[0b10000000, 0b00000001]).unwrap();
+        assert_eq!(res.1, 128);
+
+        res = parse_uleb128(&[0b11111111, 0b11111111, 0b11111111, 0b11111111, 0b01111111]).unwrap();
+        assert_eq!(res.1, std::u32::MAX);
+    }
+
+    #[test]
+    fn test_parse_uleb128p1() {
+        let mut res = parse_uleb128p1(&[0b00000001]).unwrap();
+        assert_eq!(res.1, 0);
+
+        res = parse_uleb128p1(&[0b10000000, 0b00000001]).unwrap();
+        assert_eq!(res.1, 127);
+
+        res = parse_uleb128p1(&[0b11111111, 0b11111111, 0b11111111, 0b11111111, 0b01111111]).unwrap();
+        assert_eq!(res.1, std::u32::MAX - 1);
+    }
+
+    #[test]
+    fn test_parse_sleb128() {
+        let mut res = parse_sleb128(&[0b00000001]).unwrap();
+        assert_eq!(res.1, 1);
+
+        res = parse_sleb128(&[0b10000000, 0b00000001]).unwrap();
+        assert_eq!(res.1, 128);
+
+        res = parse_sleb128(&[0b11111111, 0b11111111, 0b11111111, 0b11111111, 0b00000111]).unwrap();
+        assert_eq!(res.1, std::i32::MAX);
+
+        res = parse_sleb128(&[0b11111111, 0b11111111, 0b11111111, 0b11111111, 0b01111111]).unwrap();
+        assert_eq!(res.1, -1);
+    }
+
 }

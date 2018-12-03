@@ -23,7 +23,7 @@ pub struct Header {
 
 #[derive(Debug)]
 pub struct StringData {
-    pub utf16_size: u64,
+    pub utf16_size: u32,
     pub data: String
 }
 
@@ -228,7 +228,7 @@ pub struct EncodedCatchHandler {
     pub handlers: Vec<EncodedTypeAddrPair>,
     // bytecode
     // only present if size is non-positive
-    pub catch_all_addr: Option<u64>
+    pub catch_all_addr: Option<u32>
 }
 
 // Docs: encoded_type_addr_pair
@@ -237,14 +237,14 @@ pub struct EncodedTypeAddrPair {
     // index into type_ids list for the type of exception to catch
     pub type_: Rc<TypeIdentifier>,
     // bytecode address of associated exception handler
-    pub addr: u64
+    pub addr: u32
 }
 
 // Docs: debug_info_item
 #[derive(Debug)]
 pub struct DebugInfo {
-    pub line_start: u64,
-    pub parameter_names: Vec<u64>,
+    pub line_start: u32,
+    pub parameter_names: Vec<u32>,
     pub bytecode: Vec<DebugItemBytecodes>
 }
 
