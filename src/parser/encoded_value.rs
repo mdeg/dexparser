@@ -12,7 +12,7 @@ named!(pub parse_encoded_value_item<&[u8], EncodedValue>,
     )
 );
 
-fn parse_value(mut value: &[u8], value_type: u8) -> Result<(&[u8], EncodedValue), nom::Err<&[u8]>> {
+fn parse_value(value: &[u8], value_type: u8) -> Result<(&[u8], EncodedValue), nom::Err<&[u8]>> {
     // The high order 3 bits of the value type may contain useful size information or data
     let value_arg = (value_type & 0xE0) >> 5;
 
@@ -366,20 +366,46 @@ mod tests {
             size: 2,
             values: vec!(EncodedValue::Byte(0x05), EncodedValue::Byte(0x06))
         }));
+
+        // TODO: test parsing non-byte arrays, or arrays containing arrays
     }
 
-//    #[test]
-//    fn test_parse_annotation() {
-//        let mut writer = vec!();
-//        // value type (byte)
-//        writer.write_u8(0x1D).unwrap();
-//        // value
-//        writer.write_u8(0x01).unwrap();
-//
-//        let res = parse_encoded_value_item(&writer).unwrap();
-//
-//        assert_eq!(res.1, EncodedValue::Anno)
-//    }
+    #[test]
+    fn test_parse_annotation() {
+        let mut writer = vec!();
+        // value type (byte)
+        writer.write_u8(0x1D).unwrap();
+        // value
+        leb128::write::unsigned(&mut writer, 1).unwrap();
+        leb128::write::unsigned(&mut writer, 2).unwrap();
+
+        // Elem 1
+        leb128::write::unsigned(&mut writer, 2).unwrap();
+        writer.write_u8(0x00).unwrap();
+        writer.write_u8(0x05).unwrap();
+
+        // Elem 2
+        leb128::write::unsigned(&mut writer, 3).unwrap();
+        writer.write_u8(0x00).unwrap();
+        writer.write_u8(0x06).unwrap();
+
+        let res = parse_encoded_value_item(&writer).unwrap();
+
+        assert_eq!(res.1, EncodedValue::Annotation(RawEncodedAnnotationItem {
+            type_idx: 1,
+            size: 2,
+            elements: vec!(
+                RawAnnotationElementItem {
+                    name_idx: 2,
+                    value: EncodedValue::Byte(0x05)
+                },
+                RawAnnotationElementItem {
+                    name_idx: 3,
+                    value: EncodedValue::Byte(0x06)
+                },
+            )
+        }))
+    }
 
     #[test]
     fn test_parse_null() {
