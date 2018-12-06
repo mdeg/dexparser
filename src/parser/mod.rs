@@ -552,6 +552,7 @@ mod tests {
         assert_eq!(res.1, vec!(1, 2));
     }
 
+    // TODO: redo this using writer
     #[test]
     fn test_determine_leb128_length() {
         assert_eq!(determine_leb128_length(&[0b00000001]), 1);

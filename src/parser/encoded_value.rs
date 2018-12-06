@@ -1,47 +1,42 @@
-use super::{parse_uleb128, take_one};
+use super::{parse_uleb128, take_one, Uleb128};
 use super::error::*;
 use super::parse_data::parse_annotation_element_item;
 use super::raw_types::*;
 use byteorder::ByteOrder;
 
 named!(pub parse_encoded_value_item<&[u8], EncodedValue>,
-    peek!(
-        do_parse!(
-            value_type: call!(take_one) >>
-            value: call!(parse_value, value_type) >>
-            (value)
-        )
+    do_parse!(
+        value_type: call!(take_one) >>
+        value: call!(parse_value, value_type) >>
+        (value)
     )
 );
 
-fn parse_value(value: &[u8], value_type: u8) -> Result<((), EncodedValue), nom::Err<&[u8]>> {
+fn parse_value(mut value: &[u8], value_type: u8) -> Result<(&[u8], EncodedValue), nom::Err<&[u8]>> {
     // The high order 3 bits of the value type may contain useful size information or data
     let value_arg = (value_type & 0xE0) >> 5;
-    println!("!value_arg: {:#b} {} \n!", value_arg, value_arg as i32);
 
-    let value = match EncodedValueType::parse(value_type & 0x1F)? {
-        EncodedValueType::Byte => EncodedValue::Byte(take!(value, 1)?.1[0]),
-        EncodedValueType::Short => EncodedValue::Short(nom::le_i16(value)?.1),
-        EncodedValueType::Char => EncodedValue::Char(nom::le_u16(value)?.1),
-        EncodedValueType::Int => EncodedValue::Int(nom::le_i32(value)?.1),
-        EncodedValueType::Long => EncodedValue::Long(nom::le_i64(value)?.1),
-        EncodedValueType::Float => EncodedValue::Float(byteorder::LittleEndian::read_f32(&take!(value, 4)?.1)),
-        EncodedValueType::Double => EncodedValue::Double(byteorder::LittleEndian::read_f64(&take!(value, 8)?.1)),
-        EncodedValueType::MethodType => EncodedValue::MethodType(nom::le_u32(value)?.1),
-        EncodedValueType::MethodHandle => EncodedValue::MethodHandle(nom::le_u32(value)?.1),
-        EncodedValueType::String => EncodedValue::String(nom::le_u32(value)?.1),
-        EncodedValueType::Type => EncodedValue::Type(nom::le_u32(value)?.1),
-        EncodedValueType::Field => EncodedValue::Field(nom::le_u32(value)?.1),
-        EncodedValueType::Method => EncodedValue::Method(nom::le_u32(value)?.1),
-        EncodedValueType::Enum => EncodedValue::Enum(nom::le_u32(value)?.1),
-        EncodedValueType::Array => EncodedValue::Array(parse_encoded_array_item(value)?.1),
-        EncodedValueType::Annotation => EncodedValue::Annotation(parse_encoded_annotation_item(value)?.1),
-        EncodedValueType::Null => EncodedValue::Null,
+    Ok(match EncodedValueType::parse(value_type & 0x1F)? {
+        EncodedValueType::Byte => map!(value, take!(1), |x| { EncodedValue::Byte(x[0]) })?,
+        EncodedValueType::Short => map!(value, nom::le_i16, EncodedValue::Short)?,
+        EncodedValueType::Char => map!(value, nom::le_u16, EncodedValue::Char)?,
+        EncodedValueType::Int => map!(value, nom::le_i32, EncodedValue::Int)?,
+        EncodedValueType::Long => map!(value, nom::le_i64, EncodedValue::Long)?,
+        EncodedValueType::Float => map!(value, map!(take!(4), byteorder::LittleEndian::read_f32), EncodedValue::Float)?,
+        EncodedValueType::Double => map!(value, map!(take!(8), byteorder::LittleEndian::read_f64), EncodedValue::Double)?,
+        EncodedValueType::MethodType => map!(value, nom::le_u32, EncodedValue::MethodType)?,
+        EncodedValueType::MethodHandle => map!(value, nom::le_u32, EncodedValue::MethodHandle)?,
+        EncodedValueType::String => map!(value, nom::le_u32, EncodedValue::String)?,
+        EncodedValueType::Type => map!(value, nom::le_u32, EncodedValue::Type)?,
+        EncodedValueType::Field => map!(value, nom::le_u32, EncodedValue::Field)?,
+        EncodedValueType::Method => map!(value, nom::le_u32, EncodedValue::Method)?,
+        EncodedValueType::Enum => map!(value, nom::le_u32, EncodedValue::Enum)?,
+        EncodedValueType::Array => map!(value, parse_encoded_array_item, EncodedValue::Array)?,
+        EncodedValueType::Annotation => map!(value, parse_encoded_annotation_item, EncodedValue::Annotation)?,
+        EncodedValueType::Null => (value, EncodedValue::Null),
         // The value for boolean types is the last bit of the value arg
-        EncodedValueType::Boolean => EncodedValue::Boolean(value_arg != 0)
-    };
-
-    Ok(((), value))
+        EncodedValueType::Boolean => (value, EncodedValue::Boolean(value_arg != 0)),
+    })
 }
 
 named!(pub parse_encoded_annotation_item<&[u8], RawEncodedAnnotationItem>,
@@ -76,6 +71,7 @@ pub enum EncodedValue {
     Boolean(bool)
 }
 
+// TODO: dont call directly to this?
 named!(pub parse_encoded_array_item<&[u8], EncodedArrayItem>,
     do_parse!(
         size: call!(parse_uleb128)   >>
@@ -86,7 +82,7 @@ named!(pub parse_encoded_array_item<&[u8], EncodedArrayItem>,
 
 #[derive(Debug, PartialEq)]
 pub struct EncodedArrayItem {
-    size: u32,
+    size: Uleb128,
     values: Vec<EncodedValue>
 }
 
@@ -178,8 +174,6 @@ mod tests {
 
         let res = parse_encoded_value_item(&writer).unwrap();
 
-        // ensure nonconsumption
-        assert_eq!(res.0.len(), writer.len());
         assert_eq!(res.1, EncodedValue::Byte(0x01));
     }
 
@@ -193,8 +187,6 @@ mod tests {
 
         let res = parse_encoded_value_item(&writer).unwrap();
 
-        // ensure nonconsumption
-        assert_eq!(res.0.len(), writer.len());
         assert_eq!(res.1, EncodedValue::Short(123_i16))
     }
 
@@ -208,8 +200,6 @@ mod tests {
 
         let res = parse_encoded_value_item(&writer).unwrap();
 
-        // ensure nonconsumption
-        assert_eq!(res.0.len(), writer.len());
         assert_eq!(res.1, EncodedValue::Char('a' as u16))
     }
 
@@ -223,8 +213,6 @@ mod tests {
 
         let res = parse_encoded_value_item(&writer).unwrap();
 
-        // ensure nonconsumption
-        assert_eq!(res.0.len(), writer.len());
         assert_eq!(res.1, EncodedValue::Int(123_i32))
     }
 
@@ -238,8 +226,6 @@ mod tests {
 
         let res = parse_encoded_value_item(&writer).unwrap();
 
-        // ensure nonconsumption
-        assert_eq!(res.0.len(), writer.len());
         assert_eq!(res.1, EncodedValue::Long(123_i64))
     }
 
@@ -253,8 +239,6 @@ mod tests {
 
         let res = parse_encoded_value_item(&writer).unwrap();
 
-        // ensure nonconsumption
-        assert_eq!(res.0.len(), writer.len());
         assert_eq!(res.1, EncodedValue::Float(123_f32))
     }
 
@@ -268,8 +252,6 @@ mod tests {
 
         let res = parse_encoded_value_item(&writer).unwrap();
 
-        // ensure nonconsumption
-        assert_eq!(res.0.len(), writer.len());
         assert_eq!(res.1, EncodedValue::Double(123_f64))
     }
 
@@ -283,8 +265,6 @@ mod tests {
 
         let res = parse_encoded_value_item(&writer).unwrap();
 
-        // ensure nonconsumption
-        assert_eq!(res.0.len(), writer.len());
         assert_eq!(res.1, EncodedValue::MethodType(123_u32))
     }
 
@@ -298,8 +278,6 @@ mod tests {
 
         let res = parse_encoded_value_item(&writer).unwrap();
 
-        // ensure nonconsumption
-        assert_eq!(res.0.len(), writer.len());
         assert_eq!(res.1, EncodedValue::MethodHandle(123_u32))
     }
 
@@ -313,8 +291,6 @@ mod tests {
 
         let res = parse_encoded_value_item(&writer).unwrap();
 
-        // ensure nonconsumption
-        assert_eq!(res.0.len(), writer.len());
         assert_eq!(res.1, EncodedValue::String(123_u32))
     }
 
@@ -328,8 +304,6 @@ mod tests {
 
         let res = parse_encoded_value_item(&writer).unwrap();
 
-        // ensure nonconsumption
-        assert_eq!(res.0.len(), writer.len());
         assert_eq!(res.1, EncodedValue::Type(123_u32))
     }
 
@@ -343,8 +317,6 @@ mod tests {
 
         let res = parse_encoded_value_item(&writer).unwrap();
 
-        // ensure nonconsumption
-        assert_eq!(res.0.len(), writer.len());
         assert_eq!(res.1, EncodedValue::Field(123_u32))
     }
 
@@ -358,8 +330,6 @@ mod tests {
 
         let res = parse_encoded_value_item(&writer).unwrap();
 
-        // ensure nonconsumption
-        assert_eq!(res.0.len(), writer.len());
         assert_eq!(res.1, EncodedValue::Method(123_u32))
     }
 
@@ -373,25 +343,54 @@ mod tests {
 
         let res = parse_encoded_value_item(&writer).unwrap();
 
-        // ensure nonconsumption
-        assert_eq!(res.0.len(), writer.len());
         assert_eq!(res.1, EncodedValue::Enum(123_u32))
     }
 
-    // TODO< array, annotation
+    #[test]
+    fn test_parse_array() {
+        let mut writer = vec!();
+        // value type (byte) for the array itself
+        writer.write_u8(0x1C).unwrap();
+        // size - a ULEB value
+        leb128::write::unsigned(&mut writer, 2).unwrap();
+        // encoded elements - let's say two byte values
+        writer.write_u8(0x00).unwrap();
+        writer.write_u8(0x05).unwrap();
+        // second byte value
+        writer.write_u8(0x00).unwrap();
+        writer.write_u8(0x06).unwrap();
+
+        let res = parse_encoded_value_item(&writer).unwrap();
+
+        assert_eq!(res.1, EncodedValue::Array(EncodedArrayItem {
+            size: 2,
+            values: vec!(EncodedValue::Byte(0x05), EncodedValue::Byte(0x06))
+        }));
+    }
+
+//    #[test]
+//    fn test_parse_annotation() {
+//        let mut writer = vec!();
+//        // value type (byte)
+//        writer.write_u8(0x1D).unwrap();
+//        // value
+//        writer.write_u8(0x01).unwrap();
+//
+//        let res = parse_encoded_value_item(&writer).unwrap();
+//
+//        assert_eq!(res.1, EncodedValue::Anno)
+//    }
 
     #[test]
     fn test_parse_null() {
         let mut writer = vec!();
         // value type (byte)
         writer.write_u8(0x1E).unwrap();
-        // dud value - need to ensure this isnt read
+        // dud value
         writer.write_u8(0x01).unwrap();
 
         let res = parse_encoded_value_item(&writer).unwrap();
 
-        // ensure nonconsumption
-        assert_eq!(res.0.len(), writer.len());
         assert_eq!(res.1, EncodedValue::Null)
     }
 
@@ -405,8 +404,6 @@ mod tests {
 
             let res = parse_encoded_value_item(&writer).unwrap();
 
-            // ensure nonconsumption
-            assert_eq!(res.0.len(), writer.len());
             assert_eq!(res.1, EncodedValue::Boolean(true))
         }
         // false value
@@ -419,8 +416,6 @@ mod tests {
 
             let res = parse_encoded_value_item(&writer).unwrap();
 
-            // ensure nonconsumption
-            assert_eq!(res.0.len(), writer.len());
             assert_eq!(res.1, EncodedValue::Boolean(false))
         }
     }
