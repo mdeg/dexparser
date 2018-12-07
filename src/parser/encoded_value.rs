@@ -4,6 +4,7 @@ use super::parse_data::parse_annotation_element_item;
 use super::raw_types::*;
 use byteorder::ByteOrder;
 
+// note that this does NOT peek! that's the responsibilty of the calling parser
 named!(pub parse_encoded_value_item<&[u8], EncodedValue>,
     do_parse!(
         value_type: call!(take_one) >>
@@ -39,6 +40,7 @@ fn parse_value(value: &[u8], value_type: u8) -> Result<(&[u8], EncodedValue), no
     })
 }
 
+// TODO: this shouldn't be public
 named!(pub parse_encoded_annotation_item<&[u8], RawEncodedAnnotationItem>,
     do_parse!(
         type_idx: call!(parse_uleb128) >>
@@ -71,8 +73,7 @@ pub enum EncodedValue {
     Boolean(bool)
 }
 
-// TODO: dont call directly to this?
-named!(pub parse_encoded_array_item<&[u8], EncodedArrayItem>,
+named!(parse_encoded_array_item<&[u8], EncodedArrayItem>,
     do_parse!(
         size: call!(parse_uleb128)   >>
         values: count!(call!(parse_encoded_value_item), size as usize)  >>
@@ -162,7 +163,7 @@ mod tests {
     #[test]
     fn test_parse_byte_value() {
         let mut writer = vec!();
-        // value type (byte)
+        // value type
         writer.write_u8(0x00).unwrap();
 
         // with no following byte value
@@ -180,7 +181,7 @@ mod tests {
     #[test]
     fn test_parse_short_value() {
         let mut writer = vec!();
-        // value type (byte)
+        // value type
         writer.write_u8(0x02).unwrap();
         // value
         writer.write_i16::<LittleEndian>(123_i16).unwrap();
@@ -193,7 +194,7 @@ mod tests {
     #[test]
     fn test_parse_char_value() {
         let mut writer = vec!();
-        // value type (byte)
+        // value type
         writer.write_u8(0x03).unwrap();
         // value
         writer.write_u16::<LittleEndian>('a' as u16).unwrap();
@@ -206,7 +207,7 @@ mod tests {
     #[test]
     fn test_parse_int_value() {
         let mut writer = vec!();
-        // value type (byte)
+        // value type
         writer.write_u8(0x04).unwrap();
         // value
         writer.write_i32::<LittleEndian>(123_i32).unwrap();
@@ -219,7 +220,7 @@ mod tests {
     #[test]
     fn test_parse_long_value() {
         let mut writer = vec!();
-        // value type (byte)
+        // value type
         writer.write_u8(0x06).unwrap();
         // value
         writer.write_i64::<LittleEndian>(123_i64).unwrap();
@@ -232,7 +233,7 @@ mod tests {
     #[test]
     fn test_parse_float_value() {
         let mut writer = vec!();
-        // value type (byte)
+        // value type
         writer.write_u8(0x10).unwrap();
         // value
         writer.write_f32::<LittleEndian>(123_f32).unwrap();
@@ -245,7 +246,7 @@ mod tests {
     #[test]
     fn test_parse_double_value() {
         let mut writer = vec!();
-        // value type (byte)
+        // value type
         writer.write_u8(0x11).unwrap();
         // value
         writer.write_f64::<LittleEndian>(123_f64).unwrap();
@@ -258,7 +259,7 @@ mod tests {
     #[test]
     fn test_parse_method_type() {
         let mut writer = vec!();
-        // value type (byte)
+        // value type
         writer.write_u8(0x15).unwrap();
         // value
         writer.write_u32::<LittleEndian>(123_u32).unwrap();
@@ -271,7 +272,7 @@ mod tests {
     #[test]
     fn test_parse_method_handle() {
         let mut writer = vec!();
-        // value type (byte)
+        // value type
         writer.write_u8(0x16).unwrap();
         // value
         writer.write_u32::<LittleEndian>(123_u32).unwrap();
@@ -284,7 +285,7 @@ mod tests {
     #[test]
     fn test_parse_string() {
         let mut writer = vec!();
-        // value type (byte)
+        // value type
         writer.write_u8(0x17).unwrap();
         // value
         writer.write_u32::<LittleEndian>(123_u32).unwrap();
@@ -297,7 +298,7 @@ mod tests {
     #[test]
     fn test_parse_type() {
         let mut writer = vec!();
-        // value type (byte)
+        // value type
         writer.write_u8(0x18).unwrap();
         // value
         writer.write_u32::<LittleEndian>(123_u32).unwrap();
@@ -310,7 +311,7 @@ mod tests {
     #[test]
     fn test_parse_field() {
         let mut writer = vec!();
-        // value type (byte)
+        // value type
         writer.write_u8(0x19).unwrap();
         // value
         writer.write_u32::<LittleEndian>(123_u32).unwrap();
@@ -323,7 +324,7 @@ mod tests {
     #[test]
     fn test_parse_method() {
         let mut writer = vec!();
-        // value type (byte)
+        // value type
         writer.write_u8(0x1A).unwrap();
         // value
         writer.write_u32::<LittleEndian>(123_u32).unwrap();
@@ -336,7 +337,7 @@ mod tests {
     #[test]
     fn test_parse_enum() {
         let mut writer = vec!();
-        // value type (byte)
+        // value type
         writer.write_u8(0x1B).unwrap();
         // value
         writer.write_u32::<LittleEndian>(123_u32).unwrap();
@@ -349,7 +350,7 @@ mod tests {
     #[test]
     fn test_parse_array() {
         let mut writer = vec!();
-        // value type (byte) for the array itself
+        // value type for the array itself
         writer.write_u8(0x1C).unwrap();
         // size - a ULEB value
         leb128::write::unsigned(&mut writer, 2).unwrap();
@@ -373,7 +374,7 @@ mod tests {
     #[test]
     fn test_parse_annotation() {
         let mut writer = vec!();
-        // value type (byte)
+        // value type
         writer.write_u8(0x1D).unwrap();
         // value
         leb128::write::unsigned(&mut writer, 1).unwrap();
@@ -425,7 +426,7 @@ mod tests {
         // true value
         {
             let mut writer = vec!();
-            // value type (byte) plus an extra bit for the boolean value
+            // value type plus an extra bit for the boolean value
             writer.write_u8(0b00111111).unwrap();
 
             let res = parse_encoded_value_item(&writer).unwrap();
@@ -435,7 +436,7 @@ mod tests {
         // false value
         {
             let mut writer = vec!();
-            // value type (byte) plus an extra bit for the boolean value
+            // value type plus an extra bit for the boolean value
             writer.write_u8(0b00011111).unwrap();
 
             println!("={:#b} {:#b}=", 0b00011111 & 0xE0, (0b00011111 & 0xE0) >> 5);

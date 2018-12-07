@@ -110,7 +110,8 @@ pub struct ClassDefinition {
     pub source_file_name: Option<Rc<StringData>>,
     pub annotations: Option<Annotations>,
     pub class_data: Option<ClassData>,
-    pub static_values: Option<encoded_value::EncodedArrayItem>
+    // TODO: cast this to an encoded array item
+    pub static_values: Option<encoded_value::EncodedValue>
 }
 
 #[derive(Debug)]

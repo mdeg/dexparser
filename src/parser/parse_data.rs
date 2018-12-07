@@ -242,7 +242,8 @@ fn transform_class_defs<'a>(data: &'a[u8], data_off: usize, cdis: &[RawClassDefi
             None
         } else {
             // TODO: bug here - not sure if valuearg is included here?
-            Some(encoded_value::parse_encoded_array_item(&data[cdi.static_values_off as usize - data_off..])?.1)
+            Some(peek!(&data[cdi.static_values_off as usize - data_off..],
+                encoded_value::parse_encoded_value_item)?.1)
         };
 
         v.push(ClassDefinition {
@@ -652,6 +653,122 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_class_data_item() {
+        let mut writer = vec!();
+
+        leb128::write::unsigned(&mut writer, 1).unwrap();
+        leb128::write::unsigned(&mut writer, 1).unwrap();
+        leb128::write::unsigned(&mut writer, 1).unwrap();
+        leb128::write::unsigned(&mut writer, 1).unwrap();
+
+        // encoded field 1
+        leb128::write::unsigned(&mut writer, 1).unwrap();
+        leb128::write::unsigned(&mut writer, 0b1011).unwrap();
+
+        // encoded field 2
+        leb128::write::unsigned(&mut writer, 1).unwrap();
+        leb128::write::unsigned(&mut writer, 0b1011).unwrap();
+
+        // encoded method 1
+        leb128::write::unsigned(&mut writer, 1).unwrap();
+        leb128::write::unsigned(&mut writer, 0b1011).unwrap();
+        leb128::write::unsigned(&mut writer, 3).unwrap();
+
+        // encoded method 2
+        leb128::write::unsigned(&mut writer, 1).unwrap();
+        leb128::write::unsigned(&mut writer, 0b1011).unwrap();
+        leb128::write::unsigned(&mut writer, 3).unwrap();
+
+        let res = parse_class_data_item(&writer).unwrap();
+
+        assert_eq!(res.0.len(), writer.len());
+
+        assert_eq!(res.1, RawClassDataItem {
+            static_fields_size: 1,
+            instance_fields_size: 1,
+            direct_methods_size: 1,
+            virtual_methods_size: 1,
+            static_fields: vec!(RawEncodedField {
+                field_idx_diff: 1,
+                access_flags: 11
+            }),
+            instance_fields: vec!(RawEncodedField {
+                field_idx_diff: 1,
+                access_flags: 11
+            }),
+            direct_methods: vec!(RawEncodedMethod {
+                method_idx_diff: 1,
+                access_flags: 11,
+                code_off: 3
+            }),
+            virtual_methods: vec!(RawEncodedMethod {
+                method_idx_diff: 1,
+                access_flags: 11,
+                code_off: 3
+            })
+        });
+    }
+
+    #[test]
+    fn test_parse_annotation_element_item() {
+        let mut writer = vec!();
+
+        // name_idx
+        leb128::write::unsigned(&mut writer, 1).unwrap();
+
+        // insert an encoded_value_item (byte)
+        writer.write_u8(0x00).unwrap();
+        writer.write_u8(0x01).unwrap();
+
+        let res = parse_annotation_element_item(&writer).unwrap();
+
+        assert_eq!(res.1, RawAnnotationElementItem {
+            name_idx: 1,
+            value: encoded_value::EncodedValue::Byte(0x01)
+        })
+    }
+
+    #[test]
+    fn test_parse_annotation_set_ref_list() {
+        let mut writer = vec!();
+
+        // size
+        writer.write_u32::<LittleEndian>(2).unwrap();
+        // two ref items
+        writer.write_u32::<LittleEndian>(3).unwrap();
+        writer.write_u32::<LittleEndian>(4).unwrap();
+
+        let res = parse_annotation_set_ref_list(&writer, e).unwrap();
+
+        // ensure data was not consumed
+        assert_eq!(res.0.len(), writer.len());
+
+        assert_eq!(res.1, RawAnnotationSetRefList {
+            size: 2,
+            entries: vec!(3, 4)
+        });
+    }
+
+    #[test]
+    fn test_parse_annotation_set_item() {
+        let mut writer = vec!();
+
+        writer.write_u32::<LittleEndian>(2).unwrap();
+        writer.write_u32::<LittleEndian>(3).unwrap();
+        writer.write_u32::<LittleEndian>(4).unwrap();
+
+        let res = parse_annotation_set_item(&writer, e).unwrap();
+
+        // ensure data was not consumed
+        assert_eq!(res.0.len(), writer.len());
+
+        assert_eq!(res.1, RawAnnotationSetItem {
+            size: 2,
+            entries: vec!(3, 4)
+        });
+    }
+
+    #[test]
     fn test_parse_annotations_directory_item_empty() {
         let mut writer = vec!();
         for d in &[0_u32, 0_u32, 0_u32, 0_u32] {
@@ -669,4 +786,39 @@ mod tests {
             prm_annot: None
         })
     }
+
+    #[test]
+    fn test_parse_encoded_method() {
+        let mut writer = vec!();
+
+        leb128::write::unsigned(&mut writer, 1).unwrap();
+        // some random access flags
+        leb128::write::unsigned(&mut writer, 0b1011).unwrap();
+        leb128::write::unsigned(&mut writer, 3).unwrap();
+
+        let res = parse_encoded_method(&writer).unwrap();
+
+        assert_eq!(res.1, RawEncodedMethod {
+            method_idx_diff: 1,
+            access_flags: 11,
+            code_off: 3
+        });
+    }
+
+    #[test]
+    fn test_parse_encoded_field() {
+        let mut writer = vec!();
+
+        leb128::write::unsigned(&mut writer, 1).unwrap();
+        // some random access flags
+        leb128::write::unsigned(&mut writer, 0b1011).unwrap();
+
+        let res = parse_encoded_field(&writer).unwrap();
+
+        assert_eq!(res.1, RawEncodedField {
+            field_idx_diff: 1,
+            access_flags: 11
+        });
+    }
+
 }
