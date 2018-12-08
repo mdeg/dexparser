@@ -160,7 +160,7 @@ pub struct RawAnnotationSetRefList {
     pub entries: Vec<u32>
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct RawEncodedAnnotationItem {
     pub type_idx: Uleb128,
     pub size: Uleb128,
@@ -168,7 +168,7 @@ pub struct RawEncodedAnnotationItem {
 }
 
 // Docs: annotation_element_item
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct RawAnnotationElementItem {
     pub name_idx: Uleb128,
     pub value: super::encoded_value::EncodedValue

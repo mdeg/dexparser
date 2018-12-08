@@ -51,7 +51,7 @@ named!(pub parse_encoded_annotation_item<&[u8], RawEncodedAnnotationItem>,
 );
 
 // parse value type, then get length and parse value based on that
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum EncodedValue {
     Byte(u8),
     Short(i16),
@@ -81,7 +81,7 @@ named!(parse_encoded_array_item<&[u8], EncodedArrayItem>,
     )
 );
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct EncodedArrayItem {
     size: Uleb128,
     values: Vec<EncodedValue>
@@ -438,8 +438,6 @@ mod tests {
             let mut writer = vec!();
             // value type plus an extra bit for the boolean value
             writer.write_u8(0b00011111).unwrap();
-
-            println!("={:#b} {:#b}=", 0b00011111 & 0xE0, (0b00011111 & 0xE0) >> 5);
 
             let res = parse_encoded_value_item(&writer).unwrap();
 

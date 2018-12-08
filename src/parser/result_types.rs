@@ -1,7 +1,7 @@
 use std::{fmt, rc::Rc};
 use super::encoded_value;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct DexFile {
     pub header: super::Header,
     pub string_data: Vec<Rc<StringData>>,
@@ -12,7 +12,7 @@ pub struct DexFile {
     pub class_def_items: Vec<ClassDefinition>
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct Header {
     pub version: String,
     pub checksum: String,
@@ -21,7 +21,7 @@ pub struct Header {
     pub endianness: nom::Endianness
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct StringData {
     pub utf16_size: u32,
     pub data: String
@@ -33,7 +33,7 @@ impl fmt::Display for StringData {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct TypeIdentifier {
     pub descriptor: Rc<StringData>
 }
@@ -44,7 +44,7 @@ impl fmt::Display for TypeIdentifier {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct Prototype {
     pub shorty: Rc<StringData>,
     pub return_type: Rc<TypeIdentifier>,
@@ -62,7 +62,7 @@ impl fmt::Display for Prototype {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct Field {
     pub definer: Rc<TypeIdentifier>,
     pub type_: Rc<TypeIdentifier>,
@@ -75,7 +75,7 @@ impl fmt::Display for Field {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct Method {
     pub definer: Rc<TypeIdentifier>,
     pub prototype: Rc<Prototype>,
@@ -88,20 +88,20 @@ impl fmt::Display for Method {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct ClassAnnotation {
     pub visibility: Visibility,
     pub type_: Rc<TypeIdentifier>,
     pub elements: Vec<AnnotationElement>
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct AnnotationElement {
     pub name: Rc<StringData>,
     pub value: encoded_value::EncodedValue
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct ClassDefinition {
     pub class_type: Rc<TypeIdentifier>,
     pub access_flags: Vec<AccessFlag>,
@@ -114,15 +114,16 @@ pub struct ClassDefinition {
     pub static_values: Option<encoded_value::EncodedValue>
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct Annotations {
     pub class_annotations: Option<Vec<ClassAnnotation>>,
     pub field_annotations: Option<Vec<FieldAnnotation>>,
     pub method_annotations: Option<Vec<MethodAnnotation>>,
-    pub parameter_annotations: Option<Vec<Option<ParameterAnnotation>>>
+    // TODO: ensure handling situations where this vec is empty
+    pub parameter_annotations: Option<Vec<ParameterAnnotation>>
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct ClassData {
     pub static_fields: Vec<EncodedField>,
     pub instance_fields: Vec<EncodedField>,
@@ -130,32 +131,32 @@ pub struct ClassData {
     pub virtual_methods: Vec<EncodedMethod>
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct EncodedField {
     pub field: Rc<Field>,
     pub access_flags: Vec<AccessFlag>
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct EncodedMethod {
     pub method: Rc<Method>,
     pub access_flags: Vec<AccessFlag>,
     pub code: Option<Code>
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct MethodAnnotation {
     pub method: Rc<Method>,
     pub annotations: Vec<AnnotationItem>
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct ParameterAnnotation {
     pub method: Rc<Method>,
     pub annotations: Vec<AnnotationItem>
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct FieldAnnotation {
     pub field_data: Rc<Field>,
     pub annotations: Vec<AnnotationItem>
@@ -170,7 +171,7 @@ pub struct FieldAnnotation {
 //    }
 //}
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct AnnotationItem {
     pub visibility: Visibility,
     // TODO: de-raw this
@@ -184,7 +185,7 @@ pub struct AnnotationItem {
 //    }
 //}
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Visibility {
     BUILD,
     RUNTIME,
@@ -202,7 +203,7 @@ impl fmt::Display for Visibility {
 }
 
 // Docs: code_item
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct Code {
     // number of registers used by this code
     pub registers_size: u16,
@@ -217,14 +218,14 @@ pub struct Code {
 }
 
 // Docs: try_item
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct TryItem {
     pub code_units: Vec<u16>,
     pub handler: Vec<EncodedCatchHandler>
 }
 
 // Docs: encoded_catch_handler
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct EncodedCatchHandler {
     pub handlers: Vec<EncodedTypeAddrPair>,
     // bytecode
@@ -233,7 +234,7 @@ pub struct EncodedCatchHandler {
 }
 
 // Docs: encoded_type_addr_pair
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct EncodedTypeAddrPair {
     // index into type_ids list for the type of exception to catch
     pub type_: Rc<TypeIdentifier>,
@@ -242,7 +243,7 @@ pub struct EncodedTypeAddrPair {
 }
 
 // Docs: debug_info_item
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct DebugInfo {
     pub line_start: u32,
     pub parameter_names: Vec<u32>,
@@ -251,7 +252,7 @@ pub struct DebugInfo {
 
 //noinspection RsEnumVariantNaming
 #[allow(non_camel_case_types)]
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum DebugItemBytecodes {
     DBG_END_SEQUENCE,
     DBG_ADVANCE_PC,
