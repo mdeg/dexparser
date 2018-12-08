@@ -130,6 +130,12 @@ pub struct RawParameterAnnotation {
     pub annotations_offset: u32
 }
 
+#[derive(Debug, PartialEq)]
+pub struct RawAnnotationItem {
+    pub visibility: u8,
+    pub annotation: RawEncodedAnnotationItem
+}
+
 // Docs: type_list
 #[derive(Debug, PartialEq)]
 pub struct RawTypeList {

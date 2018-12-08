@@ -95,7 +95,7 @@ pub struct ClassAnnotation {
     pub elements: Vec<AnnotationElement>
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct AnnotationElement {
     pub name: Rc<StringData>,
     pub value: encoded_value::EncodedValue
@@ -110,8 +110,7 @@ pub struct ClassDefinition {
     pub source_file_name: Option<Rc<StringData>>,
     pub annotations: Option<Annotations>,
     pub class_data: Option<ClassData>,
-    // TODO: cast this to an encoded array item
-    pub static_values: Option<encoded_value::EncodedValue>
+    pub static_values: Option<encoded_value::EncodedArrayItem>
 }
 
 #[derive(Debug, PartialEq)]
@@ -174,8 +173,8 @@ pub struct FieldAnnotation {
 #[derive(Debug, PartialEq, Clone)]
 pub struct AnnotationItem {
     pub visibility: Visibility,
-    // TODO: de-raw this
-    pub annotation: super::raw_types::RawEncodedAnnotationItem
+    pub type_: Rc<TypeIdentifier>,
+    pub annotations: Vec<AnnotationElement>
 }
 
 // TODO

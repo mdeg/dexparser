@@ -40,13 +40,20 @@ fn parse_value(value: &[u8], value_type: u8) -> Result<(&[u8], EncodedValue), no
     })
 }
 
-// TODO: this shouldn't be public
 named!(pub parse_encoded_annotation_item<&[u8], RawEncodedAnnotationItem>,
     do_parse!(
         type_idx: call!(parse_uleb128) >>
         size: call!(parse_uleb128) >>
         elements: count!(call!(parse_annotation_element_item), size as usize) >>
         (RawEncodedAnnotationItem { type_idx, size, elements })
+    )
+);
+
+named!(pub parse_encoded_array_item<&[u8], EncodedArrayItem>,
+    do_parse!(
+        size: call!(parse_uleb128)   >>
+        values: count!(call!(parse_encoded_value_item), size as usize)  >>
+        (EncodedArrayItem { size, values })
     )
 );
 
@@ -72,14 +79,6 @@ pub enum EncodedValue {
     Null,
     Boolean(bool)
 }
-
-named!(parse_encoded_array_item<&[u8], EncodedArrayItem>,
-    do_parse!(
-        size: call!(parse_uleb128)   >>
-        values: count!(call!(parse_encoded_value_item), size as usize)  >>
-        (EncodedArrayItem { size, values })
-    )
-);
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct EncodedArrayItem {

@@ -101,17 +101,13 @@ fn transform_annotations<'a>(data: &'a[u8], off: usize, data_off: usize, sd: &[R
         // Each entry here is an offset to an annotation_item in the data pool
         for annotation_offset in set_item.entries {
             // Every annotation item contains a visibility, a type and an annotation
-            let annotation_item = parse_annotation_item(&data[annotation_offset as usize - data_off..])?.1;
+            let rai = parse_annotation_item(&data[annotation_offset as usize - data_off..])?.1;
+            let annotation_item = transform_annotation_item(rai, &sd, &ti)?;
 
             class_annotations.push(ClassAnnotation {
                 visibility: annotation_item.visibility,
-                type_: ti[annotation_item.annotation.type_idx as usize].clone(),
-                elements: annotation_item.annotation.elements.into_iter().map(|i| {
-                    AnnotationElement {
-                        name: sd[i.name_idx as usize].clone(),
-                        value: i.value
-                    }
-                }).collect()
+                type_: annotation_item.type_.clone(),
+                elements: annotation_item.annotations
             });
         }
 
@@ -119,19 +115,19 @@ fn transform_annotations<'a>(data: &'a[u8], off: usize, data_off: usize, sd: &[R
     };
 
     let field_annotations = if let Some(rfas) = adi.fld_annot {
-        Some(transform_field_annotations(data, rfas, &fi, data_off, e)?.1)
+        Some(transform_field_annotations(data, rfas, &sd, &ti, &fi, data_off, e)?.1)
     } else {
         None
     };
 
     let method_annotations = if let Some(rmas) = adi.mtd_annot {
-        Some(transform_method_annotations(data, rmas, &mi, data_off, e)?.1)
+        Some(transform_method_annotations(data, rmas, &sd, &ti, &mi, data_off, e)?.1)
     } else {
         None
     };
 
     let parameter_annotations = if let Some(rpas) = adi.prm_annot {
-        Some(transform_parameter_annotations(data, rpas, &mi, data_off, e)?.1)
+        Some(transform_parameter_annotations(data, rpas, &sd, &ti, &mi, data_off, e)?.1)
     } else {
         None
     };
@@ -144,31 +140,48 @@ fn transform_annotations<'a>(data: &'a[u8], off: usize, data_off: usize, sd: &[R
     }))
 }
 
-fn transform_field_annotations<'a>(data: &'a[u8], rfas: Vec<RawFieldAnnotation>, fi: &[Rc<Field>],
+fn transform_annotation_item(item: RawAnnotationItem, sd: &[Rc<StringData>],
+                             ti: &[Rc<TypeIdentifier>]) -> Result<AnnotationItem, ParserErr> {
+    Ok(AnnotationItem {
+        visibility: Visibility::parse(item.visibility)?,
+        type_: ti[item.annotation.type_idx as usize].clone(),
+        annotations: item.annotation.elements.into_iter().map(|raw| {
+            AnnotationElement {
+                name: sd[raw.name_idx as usize].clone(),
+                value: raw.value
+            }
+        }).collect()
+    })
+}
+
+fn transform_field_annotations<'a>(data: &'a[u8], rfas: Vec<RawFieldAnnotation>, sd: &[Rc<StringData>],
+                                   ti: &[Rc<TypeIdentifier>], fi: &[Rc<Field>],
                                    data_off: usize, e: nom::Endianness) -> nom::IResult<&'a[u8], Vec<FieldAnnotation>> {
     let mut fa = Vec::with_capacity(rfas.len());
     for rfa in rfas {
         fa.push(FieldAnnotation {
             field_data: fi[rfa.field_idx as usize].clone(),
-            annotations: parse_annotations(&data, rfa.annotations_offset as usize, data_off, e)?.1
+            annotations: parse_annotations(&data, &sd, &ti, rfa.annotations_offset as usize, data_off, e)?.1
         })
     }
     Ok((data, fa))
 }
 
-fn transform_method_annotations<'a>(data: &'a[u8], rmas: Vec<RawMethodAnnotation>, mi: &[Rc<Method>],
+fn transform_method_annotations<'a>(data: &'a[u8], rmas: Vec<RawMethodAnnotation>, sd: &[Rc<StringData>],
+                                    ti: &[Rc<TypeIdentifier>],  mi: &[Rc<Method>],
                                     data_off: usize, e: nom::Endianness) -> nom::IResult<&'a[u8], Vec<MethodAnnotation>> {
     let mut ma = Vec::with_capacity(rmas.len());
     for rma in rmas {
         ma.push(MethodAnnotation {
             method: mi[rma.method_idx as usize].clone(),
-            annotations: parse_annotations(&data, rma.annotations_offset as usize, data_off, e)?.1
+            annotations: parse_annotations(&data, &sd, &ti, rma.annotations_offset as usize, data_off, e)?.1
         })
     }
     Ok((data, ma))
 }
 
-fn transform_parameter_annotations<'a>(data: &'a[u8], rpas: Vec<RawParameterAnnotation>, mi: &[Rc<Method>],
+fn transform_parameter_annotations<'a>(data: &'a[u8], rpas: Vec<RawParameterAnnotation>, sd: &[Rc<StringData>],
+                                       ti: &[Rc<TypeIdentifier>], mi: &[Rc<Method>],
                                        data_off: usize, e: nom::Endianness) -> nom::IResult<&'a[u8], Vec<ParameterAnnotation>> {
     let mut pa = Vec::with_capacity(rpas.len());
     for rpa in rpas {
@@ -178,7 +191,7 @@ fn transform_parameter_annotations<'a>(data: &'a[u8], rpas: Vec<RawParameterAnno
             if annot_set_offset != 0 {
                 pa.push(ParameterAnnotation {
                     method: mi[rpa.method_idx as usize].clone(),
-                    annotations: parse_annotations(&data, annot_set_offset as usize, data_off, e)?.1
+                    annotations: parse_annotations(&data, &sd, &ti, annot_set_offset as usize, data_off, e)?.1
                 })
             }
         }
@@ -186,12 +199,15 @@ fn transform_parameter_annotations<'a>(data: &'a[u8], rpas: Vec<RawParameterAnno
     Ok((data, pa))
 }
 
-fn parse_annotations(data: &[u8], off: usize, data_off: usize, e: nom::Endianness) -> nom::IResult<&[u8], Vec<AnnotationItem>> {
+fn parse_annotations<'a>(data: &'a[u8], sd: &[Rc<StringData>], ti: &[Rc<TypeIdentifier>],
+                         off: usize, data_off: usize, e: nom::Endianness) -> nom::IResult<&'a[u8], Vec<AnnotationItem>> {
     let mut annotations = vec!();
     let asi = parse_annotation_set_item(&data[off - data_off..], e)?.1;
     for annot_offset in asi.entries {
-        annotations.push(parse_annotation_item(&data[annot_offset as usize - data_off..])?.1);
+        let rai = parse_annotation_item(&data[annot_offset as usize - data_off..])?.1;
+        annotations.push(transform_annotation_item(rai, &sd, &ti)?);
     }
+
     Ok((data, annotations))
 }
 
@@ -215,7 +231,7 @@ fn transform_class_defs<'a>(data: &'a[u8], data_off: usize, cdis: &[RawClassDefi
         let interfaces = if cdi.interfaces_off == 0 {
             None
         } else {
-            Some(parse_type_list(&data[cdi.interfaces_off as usize ..], e)?.1
+            Some(parse_type_list(&data[cdi.interfaces_off as usize - data_off..], e)?.1
                 .list
                 .into_iter()
                 .map(|idx| ti[idx as usize].clone())
@@ -251,16 +267,12 @@ fn transform_class_defs<'a>(data: &'a[u8], data_off: usize, cdis: &[RawClassDefi
         let static_values = if cdi.static_values_off == 0 {
             None
         } else {
-            // TODO: bug here - not sure if valuearg is included here?
-            // TODO array should be 0x1c, getting 0x0c (1 extra bit??)
             Some(peek!(&data[cdi.static_values_off as usize - data_off..],
-                encoded_value::parse_encoded_value_item)?.1)
+                encoded_value::parse_encoded_array_item)?.1)
         };
 
-        v.push(ClassDefinition {
-            class_type, access_flags, superclass,
-            interfaces, source_file_name, annotations,
-            class_data, static_values });
+        v.push(ClassDefinition { class_type, access_flags, superclass, interfaces,
+            source_file_name, annotations, class_data, static_values });
     }
 
     Ok((data, v))
@@ -463,12 +475,12 @@ named!(parse_string_data_item<&[u8], StringData>,
 );
 
 // Docs: annotation_item
-named!(parse_annotation_item<&[u8], AnnotationItem>,
+named!(parse_annotation_item<&[u8], RawAnnotationItem>,
     peek!(
         do_parse!(
-            visibility: map_res!(call!(take_one), Visibility::parse)    >>
+            visibility: call!(take_one)    >>
             annotation: call!(encoded_value::parse_encoded_annotation_item)    >>
-            (AnnotationItem { visibility, annotation })
+            (RawAnnotationItem { visibility, annotation })
         )
     )
 );
@@ -834,6 +846,31 @@ mod tests {
         });
     }
 
+    // TODO: why is there only 1 annotation item here?
+//    #[test]
+//    fn test_
+// ) {
+//        let mut data = vec!();
+//        append_annotation_set_item_data(&mut data);
+//
+//        let res = parse_annotations(&data, 0, DATA_OFFSET, e).unwrap();
+//
+//        assert_eq!(res.0.len(), data.len());
+//        assert_eq!(res.1, vec!(AnnotationItem {
+//            visibility: Visibility::BUILD,
+//            annotation: RawEncodedAnnotationItem {
+//                type_idx: 1,
+//                size: 1,
+//                elements: vec!(
+//                    RawAnnotationElementItem {
+//                        name_idx: 1,
+//                        value: encoded_value::EncodedValue::Byte(0x05)
+//                    }
+//                )
+//            }
+//        }));
+//    }
+
     #[test]
     fn test_transform_field_annotations() {
         // Generate some annotation set items
@@ -853,8 +890,11 @@ mod tests {
             }
         );
         let fi = generate_field_identifiers(2);
+        let sd = vec!(generate_string_data("Something".to_string()),
+                      generate_string_data("SomethingElse".to_string()));
+        let ti = generate_type_identifiers(2);
 
-        let res = transform_field_annotations(&data, rfas, &fi, DATA_OFFSET, e).unwrap();
+        let res = transform_field_annotations(&data, rfas, &sd, &ti, &fi, DATA_OFFSET, e).unwrap();
 
         // ensure no data was consumed
         assert_eq!(res.0.len(), data.len());
@@ -862,16 +902,13 @@ mod tests {
         // expected annotation item
         let annotation_item = AnnotationItem {
             visibility: Visibility::BUILD,
-            annotation: RawEncodedAnnotationItem {
-                type_idx: 1,
-                size: 1,
-                elements: vec!(
-                    RawAnnotationElementItem {
-                        name_idx: 1,
-                        value: encoded_value::EncodedValue::Byte(0x05)
-                    }
-                )
-            }
+            type_: ti[1].clone(),
+            annotations: vec!(
+                AnnotationElement {
+                    name: sd[1].clone(),
+                    value: encoded_value::EncodedValue::Byte(0x05)
+                }
+            )
         };
         // expected annotations
         let annotations = vec!(annotation_item.clone(), annotation_item.clone());
@@ -887,6 +924,8 @@ mod tests {
             }
         ))
     }
+
+    // ==== helpers ====
 
     // helper function to generate a valid StringData item
     fn generate_string_data(data: String) -> Rc<StringData> {
@@ -915,6 +954,17 @@ mod tests {
         let mut v = vec!();
         for i in 0..size {
             v.push(Rc::new(generate_field(i.to_string())))
+        }
+        v
+    }
+
+    // helper function to generate a list of type identifiers
+    fn generate_type_identifiers(size: i32) -> Vec<Rc<TypeIdentifier>> {
+        let mut v = vec!();
+        for i in 0..size {
+            v.push(Rc::new(TypeIdentifier {
+                descriptor: generate_string_data("SomeType".to_string())
+            }))
         }
         v
     }
