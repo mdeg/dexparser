@@ -80,6 +80,42 @@ pub enum EncodedValue {
     Boolean(bool)
 }
 
+impl ::std::fmt::Display for EncodedValue {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+        match self {
+            EncodedValue::Byte(ref i) => write!(f, "{}", i),
+            EncodedValue::Short(ref i) => write!(f, "{}", i),
+            EncodedValue::Char(ref i) => write!(f, "{}", i),
+            EncodedValue::Int(ref i) => write!(f, "{}", i),
+            EncodedValue::Long(ref i) => write!(f, "{}", i),
+            EncodedValue::Float(ref i) => write!(f, "{}", i),
+            EncodedValue::Double(ref i) => write!(f, "{}", i),
+            EncodedValue::MethodType(ref i) => write!(f, "{}", i),
+            EncodedValue::MethodHandle(ref i) => write!(f, "{}", i),
+            EncodedValue::String(ref i) => write!(f, "{}", i),
+            EncodedValue::Type(ref i) => write!(f, "{}", i),
+            EncodedValue::Field(ref i) => write!(f, "{}", i),
+            EncodedValue::Method(ref i) => write!(f, "{}", i),
+            EncodedValue::Enum(ref i) => write!(f, "{}", i),
+            EncodedValue::Array(ref i) => write!(f, "{}", i),
+            // TODO: this should never be printed as a raw value, right?
+            EncodedValue::Annotation(_) => unimplemented!(),
+            EncodedValue::Null => write!(f, "null"),
+            EncodedValue::Boolean(ref i) => write!(f, "{}", i)
+        }
+    }
+}
+
+impl ::std::fmt::Display for EncodedArrayItem {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+        let mut vals = String::new();
+        for v in &self.values {
+            vals = format!("{}\n{}", vals, v);
+        }
+        write!(f, "{}", vals)
+    }
+}
+
 #[derive(Debug, PartialEq, Clone)]
 pub struct EncodedArrayItem {
     size: Uleb128,

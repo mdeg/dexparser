@@ -844,7 +844,7 @@ mod tests {
             field_idx_diff: 1,
             access_flags: 11
         });
-    };
+    }
 
     #[test]
     fn test_parse_annotations() {

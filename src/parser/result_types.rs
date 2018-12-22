@@ -101,6 +101,12 @@ pub struct AnnotationElement {
     pub value: encoded_value::EncodedValue
 }
 
+impl fmt::Display for AnnotationElement {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "name: {}\nvalue: {}", self.name, self.value)
+    }
+}
+
 #[derive(Debug, PartialEq)]
 pub struct ClassDefinition {
     pub class_type: Rc<TypeIdentifier>,
@@ -161,14 +167,13 @@ pub struct FieldAnnotation {
     pub annotations: Vec<AnnotationItem>
 }
 
-// TODO
-//impl fmt::Display for FieldAnnotation {
-//    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-//        write!(f, "Field Data:{}\nAnnotations: {}",
-//               self.field_data,
-//               self.annotations.iter().fold(String::new(), |x, y| { format!("{}\n{}", x, y)}))
-//    }
-//}
+impl fmt::Display for FieldAnnotation {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Field Data:{}\nAnnotations: {}",
+               self.field_data,
+               self.annotations.iter().fold(String::new(), |x, y| { format!("{}\n{}", x, y)}))
+    }
+}
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct AnnotationItem {
@@ -177,12 +182,15 @@ pub struct AnnotationItem {
     pub annotations: Vec<AnnotationElement>
 }
 
-// TODO
-//impl fmt::Display for AnnotationItem {
-//    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-//        write!(f, "Visibility:{}\nAnnotation: {}", self.visibility, self.annotation)
-//    }
-//}
+impl fmt::Display for AnnotationItem {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let mut annots = String::new();
+        for a in &self.annotations {
+            annots = format!("{}\n{}", annots, a);
+        }
+        write!(f, "Visibility: {}\nType: {}\nAnnotations: {}", self.visibility, self.type_, annots)
+    }
+}
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Visibility {
