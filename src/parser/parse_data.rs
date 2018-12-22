@@ -844,32 +844,33 @@ mod tests {
             field_idx_diff: 1,
             access_flags: 11
         });
-    }
+    };
 
-    // TODO: why is there only 1 annotation item here?
-//    #[test]
-//    fn test_
-// ) {
-//        let mut data = vec!();
-//        append_annotation_set_item_data(&mut data);
-//
-//        let res = parse_annotations(&data, 0, DATA_OFFSET, e).unwrap();
-//
-//        assert_eq!(res.0.len(), data.len());
-//        assert_eq!(res.1, vec!(AnnotationItem {
-//            visibility: Visibility::BUILD,
-//            annotation: RawEncodedAnnotationItem {
-//                type_idx: 1,
-//                size: 1,
-//                elements: vec!(
-//                    RawAnnotationElementItem {
-//                        name_idx: 1,
-//                        value: encoded_value::EncodedValue::Byte(0x05)
-//                    }
-//                )
-//            }
-//        }));
-//    }
+    #[test]
+    fn test_parse_annotations() {
+        let mut data = vec!();
+        append_annotation_set_item_data(&mut data);
+
+        let sd = vec!(generate_string_data("Something".to_string()),
+                      generate_string_data("SomethingElse".to_string()));
+        let ti = generate_type_identifiers(2);
+
+        let res = parse_annotations(&data, &sd, &ti, 0, DATA_OFFSET, e).unwrap();
+
+        let expect_annotation = AnnotationItem {
+            visibility: Visibility::BUILD,
+            type_: ti[1].clone(),
+            annotations: vec!(
+                AnnotationElement {
+                    name: sd[1].clone(),
+                    value: encoded_value::EncodedValue::Byte(0x05)
+                }
+            )
+        };
+
+        assert_eq!(res.0.len(), data.len());
+        assert_eq!(res.1, vec!(expect_annotation.clone(), expect_annotation.clone()));
+    }
 
     #[test]
     fn test_transform_field_annotations() {
