@@ -263,7 +263,6 @@ fn transform_class_defs<'a>(data: &'a[u8], data_off: usize, cdis: &[RawClassDefi
             Some(ClassData { static_fields, instance_fields, direct_methods, virtual_methods })
         };
 
-        // TODO: where is CDI 6?
         let static_values = if cdi.static_values_off == 0 {
             None
         } else {

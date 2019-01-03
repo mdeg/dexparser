@@ -3,8 +3,9 @@ use super::error::*;
 use super::parse_data::parse_annotation_element_item;
 use super::raw_types::*;
 use byteorder::ByteOrder;
+use std::fmt;
 
-// note that this does NOT peek! that's the responsibilty of the calling parser
+// note that this does NOT peek! that's the responsibility of the calling parser
 named!(pub parse_encoded_value_item<&[u8], EncodedValue>,
     do_parse!(
         value_type: call!(take_one) >>
@@ -15,23 +16,40 @@ named!(pub parse_encoded_value_item<&[u8], EncodedValue>,
 
 fn parse_value(value: &[u8], value_type: u8) -> Result<(&[u8], EncodedValue), nom::Err<&[u8]>> {
     // The high order 3 bits of the value type may contain useful size information or data
-    let value_arg = (value_type & 0xE0) >> 5;
+    let value_arg = ((value_type & 0xE0) >> 5) as i8;
 
     Ok(match EncodedValueType::parse(value_type & 0x1F)? {
         EncodedValueType::Byte => map!(value, take!(1), |x| { EncodedValue::Byte(x[0]) })?,
-        EncodedValueType::Short => map!(value, nom::le_i16, EncodedValue::Short)?,
-        EncodedValueType::Char => map!(value, nom::le_u16, EncodedValue::Char)?,
-        EncodedValueType::Int => map!(value, nom::le_i32, EncodedValue::Int)?,
-        EncodedValueType::Long => map!(value, nom::le_i64, EncodedValue::Long)?,
-        EncodedValueType::Float => map!(value, map!(take!(4), byteorder::LittleEndian::read_f32), EncodedValue::Float)?,
-        EncodedValueType::Double => map!(value, map!(take!(8), byteorder::LittleEndian::read_f64), EncodedValue::Double)?,
-        EncodedValueType::MethodType => map!(value, nom::le_u32, EncodedValue::MethodType)?,
-        EncodedValueType::MethodHandle => map!(value, nom::le_u32, EncodedValue::MethodHandle)?,
-        EncodedValueType::String => map!(value, nom::le_u32, EncodedValue::String)?,
-        EncodedValueType::Type => map!(value, nom::le_u32, EncodedValue::Type)?,
-        EncodedValueType::Field => map!(value, nom::le_u32, EncodedValue::Field)?,
-        EncodedValueType::Method => map!(value, nom::le_u32, EncodedValue::Method)?,
-        EncodedValueType::Enum => map!(value, nom::le_u32, EncodedValue::Enum)?,
+        EncodedValueType::Short => map!(value, map!(take!(value_arg + 1), |x| { byteorder::LittleEndian::read_int(x, x.len()) as i16}), EncodedValue::Short)?,
+        EncodedValueType::Char => map!(value, map!(take!(value_arg + 1), |x| { byteorder::LittleEndian::read_uint(x, x.len()) as u16 }), EncodedValue::Char)?,
+        EncodedValueType::Int => map!(value, map!(take!(value_arg + 1), |x| { byteorder::LittleEndian::read_int(x, x.len()) as i32 }), EncodedValue::Int)?,
+        EncodedValueType::Long => map!(value, map!(take!(value_arg + 1), |x| { byteorder::LittleEndian::read_int(x, x.len()) as i64 }), EncodedValue::Long)?,
+        // Floats and Doubles below the maximum byte width should be 0-extended to the right
+        EncodedValueType::Float => map!(value, map!(take!(value_arg + 1), |x| {
+            if x.len() < 4 {
+                let mut v = x.to_vec();
+                v.extend(vec![0; 4 - x.len()]);
+                byteorder::LittleEndian::read_f32(&v)
+            } else {
+                byteorder::LittleEndian::read_f32(x)
+            }
+        }), EncodedValue::Float)?,
+        EncodedValueType::Double => map!(value, map!(take!(value_arg + 1), |x| {
+            if x.len() < 8 {
+                let mut v = x.to_vec();
+                v.extend(vec![0; 8 - x.len()]);
+                byteorder::LittleEndian::read_f64(&v)
+            } else {
+                byteorder::LittleEndian::read_f64(x)
+            }
+        }), EncodedValue::Double)?,
+        EncodedValueType::MethodType => map!(value, call!(convert_variable_u32, value_arg + 1), EncodedValue::MethodType)?,
+        EncodedValueType::MethodHandle => map!(value, call!(convert_variable_u32, value_arg + 1), EncodedValue::MethodHandle)?,
+        EncodedValueType::String => map!(value, call!(convert_variable_u32, value_arg + 1), EncodedValue::String)?,
+        EncodedValueType::Type => map!(value, call!(convert_variable_u32, value_arg + 1), EncodedValue::Type)?,
+        EncodedValueType::Field => map!(value, call!(convert_variable_u32, value_arg + 1), EncodedValue::Field)?,
+        EncodedValueType::Method => map!(value, call!(convert_variable_u32, value_arg + 1), EncodedValue::Method)?,
+        EncodedValueType::Enum => map!(value, call!(convert_variable_u32, value_arg + 1), EncodedValue::Enum)?,
         EncodedValueType::Array => map!(value, parse_encoded_array_item, EncodedValue::Array)?,
         EncodedValueType::Annotation => map!(value, parse_encoded_annotation_item, EncodedValue::Annotation)?,
         EncodedValueType::Null => (value, EncodedValue::Null),
@@ -39,6 +57,10 @@ fn parse_value(value: &[u8], value_type: u8) -> Result<(&[u8], EncodedValue), no
         EncodedValueType::Boolean => (value, EncodedValue::Boolean(value_arg != 0)),
     })
 }
+
+named_args!(convert_variable_u32(size: i8)<&[u8], u32>,
+    map!(take!(size), |x| { byteorder::LittleEndian::read_uint(x, x.len()) as u32 })
+);
 
 named!(pub parse_encoded_annotation_item<&[u8], RawEncodedAnnotationItem>,
     do_parse!(
@@ -57,7 +79,6 @@ named!(pub parse_encoded_array_item<&[u8], EncodedArrayItem>,
     )
 );
 
-// parse value type, then get length and parse value based on that
 #[derive(Debug, PartialEq, Clone)]
 pub enum EncodedValue {
     Byte(u8),
@@ -80,8 +101,8 @@ pub enum EncodedValue {
     Boolean(bool)
 }
 
-impl ::std::fmt::Display for EncodedValue {
-    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+impl fmt::Display for EncodedValue {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             EncodedValue::Byte(ref i) => write!(f, "{}", i),
             EncodedValue::Short(ref i) => write!(f, "{}", i),
@@ -199,7 +220,7 @@ mod tests {
     fn test_parse_byte_value() {
         let mut writer = vec!();
         // value type
-        writer.write_u8(0x00).unwrap();
+        writer.write_u8(0b00000000).unwrap();
 
         // with no following byte value
         let err = parse_encoded_value_item(&writer);
@@ -214,75 +235,168 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_short_value() {
+    fn test_parse_short_value_single_byte() {
         let mut writer = vec!();
         // value type
-        writer.write_u8(0x02).unwrap();
+        writer.write_u8(0b00000010).unwrap();
         // value
-        writer.write_i16::<LittleEndian>(123_i16).unwrap();
+        writer.write_u8(1 as u8).unwrap();
 
         let res = parse_encoded_value_item(&writer).unwrap();
 
-        assert_eq!(res.1, EncodedValue::Short(123_i16))
+        assert_eq!(res.1, EncodedValue::Short(1))
     }
 
     #[test]
-    fn test_parse_char_value() {
+    fn test_parse_short_value_multiple_bytes() {
         let mut writer = vec!();
         // value type
-        writer.write_u8(0x03).unwrap();
+        writer.write_u8(0b00100010).unwrap();
         // value
-        writer.write_u16::<LittleEndian>('a' as u16).unwrap();
+        writer.write_i16::<LittleEndian>(::std::i16::MAX).unwrap();
 
         let res = parse_encoded_value_item(&writer).unwrap();
 
-        assert_eq!(res.1, EncodedValue::Char('a' as u16))
+        assert_eq!(res.1, EncodedValue::Short(::std::i16::MAX))
     }
 
     #[test]
-    fn test_parse_int_value() {
+    fn test_parse_char_value_single_byte() {
         let mut writer = vec!();
         // value type
-        writer.write_u8(0x04).unwrap();
-        // value
-        writer.write_i32::<LittleEndian>(123_i32).unwrap();
+        writer.write_u8(0b00000011).unwrap();
+        // single byte char value
+        writer.write_u8('A' as u8).unwrap();
 
         let res = parse_encoded_value_item(&writer).unwrap();
 
-        assert_eq!(res.1, EncodedValue::Int(123_i32))
+        assert_eq!(res.1, EncodedValue::Char('A' as u16))
     }
 
     #[test]
-    fn test_parse_long_value() {
+    fn test_parse_char_value_multiple_byte() {
         let mut writer = vec!();
         // value type
-        writer.write_u8(0x06).unwrap();
-        // value
-        writer.write_i64::<LittleEndian>(123_i64).unwrap();
+        writer.write_u8(0b00100011).unwrap();
+        // two byte unicode value
+        writer.write_u16::<LittleEndian>('ß' as u16).unwrap();
 
         let res = parse_encoded_value_item(&writer).unwrap();
 
-        assert_eq!(res.1, EncodedValue::Long(123_i64))
+        assert_eq!(res.1, EncodedValue::Char('ß' as u16))
     }
 
     #[test]
-    fn test_parse_float_value() {
+    fn test_parse_int_value_single_byte() {
         let mut writer = vec!();
-        // value type
-        writer.write_u8(0x10).unwrap();
+        // value type (int, single byte)
+        writer.write_u8(0b00000100).unwrap();
         // value
-        writer.write_f32::<LittleEndian>(123_f32).unwrap();
+        writer.write_u8(1_i32 as u8).unwrap();
 
         let res = parse_encoded_value_item(&writer).unwrap();
 
-        assert_eq!(res.1, EncodedValue::Float(123_f32))
+        assert_eq!(res.1, EncodedValue::Int(1_i32))
+    }
+
+    #[test]
+    fn test_parse_int_value_multiple_bytes() {
+        let mut writer = vec!();
+        // value type (int, 4 bytes)
+        writer.write_u8(0b01100100).unwrap();
+        // value
+        writer.write_i32::<LittleEndian>(::std::i32::MAX).unwrap();
+
+        let res = parse_encoded_value_item(&writer).unwrap();
+
+        assert_eq!(res.1, EncodedValue::Int(::std::i32::MAX))
+    }
+
+    #[test]
+    fn test_parse_long_value_single_byte() {
+        let mut writer = vec!();
+        // value type (long, 1 byte)
+        writer.write_u8(0b00000110).unwrap();
+        // value
+        writer.write_u8(1_i64 as u8).unwrap();
+
+        let res = parse_encoded_value_item(&writer).unwrap();
+
+        assert_eq!(res.1, EncodedValue::Long(1_i64))
+    }
+
+    #[test]
+    fn test_parse_long_value_multiple_bytes() {
+        let mut writer = vec!();
+        // value type (long, 8 bytes)
+        writer.write_u8(0b11100110).unwrap();
+        // value
+        writer.write_i64::<LittleEndian>(::std::i64::MAX).unwrap();
+
+        let res = parse_encoded_value_item(&writer).unwrap();
+
+        assert_eq!(res.1, EncodedValue::Long(::std::i64::MAX))
+    }
+
+    #[test]
+    fn test_parse_float_value_single_byte() {
+        // spec says a float may be encoded as a single byte
+        // TODO: is 0 the only IEEE754 float value that can be encoded with a single byte?
+        let mut writer = vec!();
+        // value type (float, 1 byte)
+        writer.write_u8(0b00010000).unwrap();
+        // value
+        writer.write_u8(0b00000000).unwrap();
+
+        let res = parse_encoded_value_item(&writer).unwrap();
+
+        match res.1 {
+            EncodedValue::Float(x) => assert_eq!(x, 0_f32),
+            _ => panic!()
+        }
+    }
+
+    // TODO: work out how exactly the spec encodes floats
+//    #[test]
+//    fn test_parse_float_value_two_bytes() {
+//        // a two byte value
+//        // tests that we are sign extending correctly
+//
+//        let mut writer = vec!();
+//        // value type (float, 2 byte)
+//        writer.write_u8(0b00110000).unwrap();
+//        // value
+//        // write sign and exponent (2 decimal places)
+//        writer.write_u8(0b00000010).unwrap();
+//        // then value (255)
+//        writer.write_u8(0b11111111).unwrap();
+//
+//        let res = parse_encoded_value_item(&writer).unwrap();
+//
+//        match res.1 {
+//            EncodedValue::Float(x) => assert_eq!(x, 2.55_f32),
+//            _ => panic!()
+//        }
+//    }
+
+    #[test]
+    fn test_parse_float_value_multiple_byte() {
+        let mut writer = vec!();
+        // value type (float, 4 bytes)
+        writer.write_u8(0b01110000).unwrap();
+        // value
+        writer.write_f32::<LittleEndian>(::std::f32::MAX).unwrap();
+
+        let res = parse_encoded_value_item(&writer).unwrap();
+
+        assert_eq!(res.1, EncodedValue::Float(::std::f32::MAX))
     }
 
     #[test]
     fn test_parse_double_value() {
         let mut writer = vec!();
-        // value type
-        writer.write_u8(0x11).unwrap();
+        // value type (8-byte length)
+        writer.write_u8(0b11110001).unwrap();
         // value
         writer.write_f64::<LittleEndian>(123_f64).unwrap();
 
@@ -290,6 +404,10 @@ mod tests {
 
         assert_eq!(res.1, EncodedValue::Double(123_f64))
     }
+
+    // TODO: write more tests for double values
+
+    // TODO: write multi/single byte tests for method types
 
     #[test]
     fn test_parse_method_type() {
@@ -383,8 +501,10 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_array() {
+    fn test_parse_array_simple() {
+        // simple test of two byte values
         let mut writer = vec!();
+
         // value type for the array itself
         writer.write_u8(0x1C).unwrap();
         // size - a ULEB value
@@ -402,8 +522,77 @@ mod tests {
             size: 2,
             values: vec!(EncodedValue::Byte(0x05), EncodedValue::Byte(0x06))
         }));
+    }
 
-        // TODO: test parsing non-byte arrays, or arrays containing arrays
+    #[test]
+    fn test_parse_array_complex() {
+        // test some variable length ints, a boolean and a null
+        let mut writer = vec!();
+
+        // value type (array)
+        writer.write_u8(0b00011100).unwrap();
+        // size - a ULEB value
+        leb128::write::unsigned(&mut writer, 4).unwrap();
+        // value arg indicates an integer of 1 byte length (size - 1 = 0)
+        writer.write_u8(0b00000100).unwrap();
+        writer.write_u8(0x01).unwrap();
+        // indicates a 4 byte integer (size - 1 = 3)
+        writer.write_u8(0b01100100).unwrap();
+        writer.write_i32::<LittleEndian>(::std::i32::MAX).unwrap();
+        // throw in a boolean and a null value, to see if we handle 0-byte elements
+        writer.write_u8(0b00111111).unwrap();
+        writer.write_u8(0b00111110).unwrap();
+
+        let res = parse_encoded_value_item(&writer).unwrap();
+
+        assert_eq!(res.1, EncodedValue::Array(EncodedArrayItem {
+            size: 4,
+            values: vec!(
+                EncodedValue::Int(1),
+                EncodedValue::Int(::std::i32::MAX),
+                EncodedValue::Boolean(true),
+                EncodedValue::Null)
+        }));
+    }
+
+    #[test]
+    fn test_parse_array_recursive() {
+        // test nested recursive arrays
+        let mut writer = vec!();
+
+        // value type (array)
+        writer.write_u8(0b00011100).unwrap();
+        // size - a ULEB value
+        leb128::write::unsigned(&mut writer, 4).unwrap();
+        // value arg indicates an integer of 1 byte length (size - 1 = 0)
+        writer.write_u8(0b00000100).unwrap();
+        writer.write_u8(0x01).unwrap();
+
+        // let's put another array in
+        writer.write_u8(0b00011100).unwrap();
+        leb128::write::unsigned(&mut writer, 1).unwrap();
+        // and an integer inside that
+        writer.write_u8(0b00000100).unwrap();
+        writer.write_u8(0x01).unwrap();
+
+        // now boolean & null values - these should be outside the 2nd array and in the 1st array
+        writer.write_u8(0b00111111).unwrap();
+        writer.write_u8(0b00111110).unwrap();
+
+        let res = parse_encoded_value_item(&writer).unwrap();
+
+        assert_eq!(res.1, EncodedValue::Array(EncodedArrayItem {
+            size: 4,
+            values: vec!(
+                EncodedValue::Int(1),
+                EncodedValue::Array(EncodedArrayItem {
+                    size: 1,
+                    values: vec!(EncodedValue::Int(1))
+                }),
+                EncodedValue::Boolean(true),
+                EncodedValue::Null
+            )
+        }))
     }
 
     #[test]
@@ -457,26 +646,24 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_boolean() {
-        // true value
-        {
-            let mut writer = vec!();
-            // value type plus an extra bit for the boolean value
-            writer.write_u8(0b00111111).unwrap();
+    fn test_parse_boolean_true() {
+        let mut writer = vec!();
+        // value type plus an extra bit for the boolean value
+        writer.write_u8(0b00111111).unwrap();
 
-            let res = parse_encoded_value_item(&writer).unwrap();
+        let res = parse_encoded_value_item(&writer).unwrap();
 
-            assert_eq!(res.1, EncodedValue::Boolean(true))
-        }
-        // false value
-        {
-            let mut writer = vec!();
-            // value type plus an extra bit for the boolean value
-            writer.write_u8(0b00011111).unwrap();
+        assert_eq!(res.1, EncodedValue::Boolean(true))
+    }
 
-            let res = parse_encoded_value_item(&writer).unwrap();
+    #[test]
+    fn test_parse_boolean_false() {
+        let mut writer = vec!();
+        // value type plus an extra bit for the boolean value
+        writer.write_u8(0b00011111).unwrap();
 
-            assert_eq!(res.1, EncodedValue::Boolean(false))
-        }
+        let res = parse_encoded_value_item(&writer).unwrap();
+
+        assert_eq!(res.1, EncodedValue::Boolean(false))
     }
 }
