@@ -310,7 +310,7 @@ pub struct RawEncodedTypeAddrPair {
 pub struct RawDebugInfoItem {
     pub line_start: Uleb128,
     pub parameters_size: Uleb128,
-    pub parameter_names: Vec<Uleb128>,
+    pub parameter_names: Vec<Sleb128>,
     pub bytecode: Vec<u8>
 }
 

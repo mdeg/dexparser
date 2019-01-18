@@ -8,7 +8,7 @@ impl std::error::Error for ParserErr {}
 impl<E: fmt::Debug + Clone> From<nom::Err<E>> for ParserErr {
     fn from(e: nom::Err<E>) -> Self {
         // TODO
-        println!("error! {:?}", e);
+//        println!("error! {:?}", e);
         ParserErr
     }
 }

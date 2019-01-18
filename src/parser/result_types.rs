@@ -9,7 +9,13 @@ pub struct DexFile {
     pub prototypes: Vec<Rc<Prototype>>,
     pub fields: Vec<Rc<Field>>,
     pub methods: Vec<Rc<Method>>,
-    pub class_def_items: Vec<ClassDefinition>
+    pub class_def_items: Vec<ClassDefinition>,
+    pub call_site_items: Option<Vec<CallSiteItem>>
+}
+
+#[derive(Debug, PartialEq)]
+pub struct CallSiteItem {
+    // TODO
 }
 
 #[derive(Debug, PartialEq)]
@@ -253,7 +259,7 @@ pub struct EncodedTypeAddrPair {
 #[derive(Debug, PartialEq)]
 pub struct DebugInfo {
     pub line_start: u32,
-    pub parameter_names: Vec<u32>,
+    pub parameter_names: Vec<i32>,
     pub bytecode: Vec<DebugItemBytecodes>
 }
 

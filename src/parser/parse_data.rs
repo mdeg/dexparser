@@ -75,6 +75,21 @@ pub fn transform_dex_file(raw: RawDexFile, e: nom::Endianness) -> Result<DexFile
     let class_def_items = transform_class_defs(&raw.data, off, &raw.class_def_items, &ti, &sd,
                                                &fields, &methods, header.endianness)?.1;
 
+
+    let call_site_items = if let Some(csi) = raw.call_site_idxs {
+        //TODO
+        unimplemented!();
+//        let mut v = Vec::new();
+//        for idx in csi {
+//            let x = encoded_value::parse_encoded_array_item(&raw.data[idx as usize - off ..])?.1;
+//
+//            v.push(CallSiteItem {})
+//        }
+//        Some(v)
+    } else {
+        None
+    };
+
     Ok(DexFile {
         header,
         string_data: sd,
@@ -82,8 +97,13 @@ pub fn transform_dex_file(raw: RawDexFile, e: nom::Endianness) -> Result<DexFile
         prototypes: pro,
         fields,
         methods,
-        class_def_items
+        class_def_items,
+        call_site_items
     })
+}
+
+fn parse_call_site_items() {
+
 }
 
 fn transform_annotations<'a>(data: &'a[u8], off: usize, data_off: usize, sd: &[Rc<StringData>],
@@ -313,11 +333,12 @@ fn transform_code_item<'a>(data: &'a[u8], data_off: usize, raw: RawCodeItem,
         let mut tries = Vec::with_capacity(raw_tries.len());
         for raw_try in raw_tries {
 
-            let code_units = parse_code_units(&data[raw_try.start_addr as usize - data_off ..],
+            let code_units = parse_code_units(&data[raw_try.start_addr as usize ..],
                                               raw_try.insn_count as usize, e)?.1;
 
             let handler = {
-                let rh = peek!(&data[raw_try.handler_off as usize - data_off ..], parse_encoded_catch_handler_list)?.1;
+                // TODO: unsure if this needs a different offset?
+                let rh = peek!(&data[raw_try.handler_off as usize ..], parse_encoded_catch_handler_list)?.1;
                 transform_encoded_catch_handler_list(rh, &ti)
             };
 
@@ -393,8 +414,7 @@ named!(parse_debug_info_item<&[u8], RawDebugInfoItem>,
             line_start: call!(parse_uleb128)    >>
             parameters_size: call!(parse_uleb128)   >>
             parameter_names: count!(call!(parse_uleb128p1), parameters_size as usize)    >>
-            // TODO: take one byte extra to get the end sequence
-            bytecode: map!(take_until!("\0"), |i| { i.to_vec() })    >>
+            bytecode: map!(take_until_and_consume!("\0"), |i| { i.to_vec() })    >>
             (RawDebugInfoItem { line_start, parameters_size, parameter_names, bytecode })
         )
     )
@@ -465,10 +485,8 @@ named!(parse_string_data_item<&[u8], StringData>,
     peek!(
         do_parse!(
             utf16_size: call!(parse_uleb128)                    >>
-            data: map!(
-                    map_res!(
-                        take_until_and_consume!("\0"), str::from_utf8),
-                    str::to_string)                                                 >>
+            data: map!(map!(take_until_and_consume!("\0"), mutf8::MString::from_mutf8),
+                mutf8::MString::into_string) >>
             (StringData { utf16_size, data })
     ))
 );

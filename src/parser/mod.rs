@@ -49,7 +49,7 @@ pub fn parse(buffer: &[u8]) -> Result<DexFile, ParserErr> {
 
 // TODO: conds for string id, type id, etc
 fn parse_dex_file(input: &[u8], e: nom::Endianness) -> Result<(&[u8], RawDexFile), nom::Err<&[u8]>> {
-    do_parse!(input,
+    dbg!(input, do_parse!(
         header: call!(parse_header, e) >>
         // Version 038 adds some new index pools with sizes not indicated in the header
         // For this version and higher, we'll need to peek at the map list to know their size for parsing
@@ -67,7 +67,7 @@ fn parse_dex_file(input: &[u8], e: nom::Endianness) -> Result<(&[u8], RawDexFile
         link_data: cond!(header.link_off > 0, map!(eof!(), |ld| { ld.to_vec() }))   >>
         (RawDexFile { header, string_id_items, type_id_items, proto_id_items, field_id_items,
             method_id_items, class_def_items, call_site_idxs, method_handle_idxs, data, link_data })
-    )
+    ))
 }
 
 named!(take_one<&[u8], u8>, map!(take!(1), |x| { x[0] }));
@@ -96,8 +96,9 @@ named!(parse_sleb128<&[u8], Sleb128>,
 );
 
 // uleb128p1 is uleb128 plus one - so subtract one from uleb128
-named!(parse_uleb128p1<&[u8], Uleb128>,
-    map!(call!(parse_uleb128), |i| { i - 1 })
+// This needs to be signed, as the parsed version can contain a negative value (-1)
+named!(parse_uleb128p1<&[u8], Sleb128>,
+    map!(call!(parse_uleb128), |i| { i as i32 - 1 })
 );
 
 // LEB128 only ever encodes 32-bit values in a .dex file
