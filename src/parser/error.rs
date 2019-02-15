@@ -1,39 +1,53 @@
 use ::std::fmt;
 
-#[derive(Debug)]
-pub struct ParserErr;
+#[derive(Debug, Clone)]
+pub enum ParserErr {
+    EndedEarly(usize),
+    ParsingFailed(String),
+    EncodingError
+}
 
 impl std::error::Error for ParserErr {}
 
 impl<E: fmt::Debug + Clone> From<nom::Err<E>> for ParserErr {
     fn from(e: nom::Err<E>) -> Self {
-        // TODO
-//        println!("error! {:?}", e);
-        ParserErr
+
+        match e {
+            nom::Err::Incomplete(ref needed) => {
+                match needed {
+                    nom::Needed::Unknown => ParserErr::ParsingFailed(String::from("file ended early")),
+                    nom::Needed::Size(size) => ParserErr::EndedEarly(*size)
+                }
+            },
+            nom::Err::Error(ctx) => {
+                match ctx {
+                    nom::Context::Code(pos, kind) => {
+//                        std::dbg!(position);
+                        std::dbg!(kind);
+                        ParserErr::ParsingFailed(String::from("parsing failed"))
+                    }
+                }
+            },
+            nom::Err::Failure(ctx) => ParserErr::ParsingFailed(String::from("parsing failed"))
+        }
     }
 }
 
 impl From<&'static str> for ParserErr {
     fn from(e: &'static str) -> Self {
-        // TODO
-        println!("error! {:?}", e);
-        ParserErr
+        ParserErr::ParsingFailed(e.to_string())
     }
 }
 
 impl From<String> for ParserErr {
     fn from(e: String) -> Self {
-        // TODO
-        println!("error! {:?}", e);
-        ParserErr
+        ParserErr::ParsingFailed(e)
     }
 }
 
 impl From<::std::string::FromUtf8Error> for ParserErr {
     fn from(e: ::std::string::FromUtf8Error) -> Self {
-        // TODO
-        println!("error! {:?}", e);
-        ParserErr
+        ParserErr::ParsingFailed("could not parse string as UTF8".to_string())
     }
 }
 

@@ -77,15 +77,17 @@ pub fn transform_dex_file(raw: RawDexFile, e: nom::Endianness) -> Result<DexFile
 
 
     let call_site_items = if let Some(csi) = raw.call_site_idxs {
-        //TODO
-        unimplemented!();
-//        let mut v = Vec::new();
-//        for idx in csi {
-//            let x = encoded_value::parse_encoded_array_item(&raw.data[idx as usize - off ..])?.1;
-//
-//            v.push(CallSiteItem {})
-//        }
-//        Some(v)
+        let mut v = Vec::new();
+        for idx in csi {
+            let x = encoded_value::parse_encoded_array_item(&raw.data[idx as usize - off ..])?.1;
+
+            std::dbg!(idx);
+            println!("{:?}", x);
+            std::dbg!(x);
+
+            v.push(CallSiteItem {})
+        }
+        Some(v)
     } else {
         None
     };

@@ -8,7 +8,6 @@ use self::result_types::*;
 use self::raw_types::*;
 use self::error::*;
 use nom::*;
-use std::str;
 
 // The magic that starts a DEX file
 const DEX_FILE_MAGIC: [u8; 4] = [0x64, 0x65, 0x78, 0x0A];
@@ -31,20 +30,12 @@ pub fn parse(buffer: &[u8]) -> Result<DexFile, ParserErr> {
         } else if buffer[40 .. 44] == REVERSE_ENDIAN_CONSTANT {
             nom::Endianness::Little
         } else {
-            return Err(ParserErr);
+            return Err(ParserErr::ParsingFailed(String::from("could not determine endianness")));
         }
     };
 
     let raw = parse_dex_file(buffer, endianness)?.1;
-    let res = parse_data::transform_dex_file(raw, endianness);
-
-    match res {
-        Ok(dexf) => Ok(dexf),
-        Err(e) => {
-//            println!("ERROR: {}", e);
-            Err(ParserErr)
-        }
-    }
+    parse_data::transform_dex_file(raw, endianness)
 }
 
 // TODO: conds for string id, type id, etc
@@ -582,7 +573,7 @@ mod tests {
         assert_eq!(res.1, 127);
 
         res = parse_uleb128p1(&[0b11111111, 0b11111111, 0b11111111, 0b11111111, 0b01111111]).unwrap();
-        assert_eq!(res.1, std::u32::MAX - 1);
+        assert_eq!(res.1, std::i32::MAX - 1);
     }
 
     #[test]
