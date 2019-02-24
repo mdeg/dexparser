@@ -13,9 +13,35 @@ pub struct DexFile {
     pub call_site_items: Option<Vec<CallSiteItem>>
 }
 
+impl fmt::Display for DexFile {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Header:{}\nStrings: {}\nType Identifiers: {}\nPrototypes: {}\nFields: {}\n
+            Methods: {}\nClass Definitions: {}\nCall Site Items: {}\n",
+            &self.header,
+            &self.string_data.iter().map(|x| x.data.clone()).collect::<String>(),
+            &self.type_identifiers.iter().map(|x| (*x.descriptor).data.clone()).collect::<String>(),
+            &self.prototypes.iter().map(|x| format!("{}", x)).collect::<String>(),
+            &self.fields.iter().map(|x| format!("{}", x)).collect::<String>(),
+            &self.methods.iter().map(|x| format!("{}", x)).collect::<String>(),
+            &self.class_def_items.iter().map(|x| format!("{}\n", x)).collect::<String>(),
+            match &self.call_site_items {
+                None => format!(""),
+                Some(x) => x.iter().map(|x| format!("{}", x)).collect::<String>()
+            }
+        )
+    }
+}
+
 #[derive(Debug, PartialEq)]
 pub struct CallSiteItem {
     // TODO
+}
+
+impl fmt::Display for CallSiteItem {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        // TODO
+        write!(f, "TODO")
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -25,6 +51,22 @@ pub struct Header {
     pub signature: [u8; 20],
     pub file_size: u32,
     pub endianness: nom::Endianness
+}
+
+impl fmt::Display for Header {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        // TODO: some nice formatting for checksum
+        write!(f, "version: {}\nchecksum: {}\nsignature: {:?}\nfile size (bytes): {}\nendianness: {}",
+            self.version,
+            self.checksum,
+            self.signature,
+            self.file_size,
+            match self.endianness {
+                nom::Endianness::Big => "big-endian",
+                nom::Endianness::Little => "little-endian"
+            }
+        )
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -77,7 +119,7 @@ pub struct Field {
 
 impl fmt::Display for Field {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "definer: {}\ntype: {}\nname: {}", self.definer, self.type_, self.name)
+        write!(f, "definer: {}\ntype: {}\nname: {}\n", self.definer, self.type_, self.name)
     }
 }
 
@@ -123,6 +165,17 @@ pub struct ClassDefinition {
     pub annotations: Option<Annotations>,
     pub class_data: Option<ClassData>,
     pub static_values: Option<encoded_value::EncodedArrayItem>
+}
+
+impl fmt::Display for ClassDefinition {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}",
+            *self.class_type
+            // TODO
+
+
+        )
+    }
 }
 
 #[derive(Debug, PartialEq)]
