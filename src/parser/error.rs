@@ -24,9 +24,15 @@ impl<E: fmt::Debug + Clone> From<nom::Err<E>> for ParserErr {
                     nom::Context::Code(pos, kind) => {
 //                        std::dbg!(position);
                         std::dbg!(kind);
-                        ParserErr::ParsingFailed(String::from("parsing failed"))
+                    },
+                    // TODO: cfg flag this
+                    nom::Context::List(errors) => {
+                        for error in errors {
+                            std::dbg!(error.1);
+                        }
                     }
                 }
+                ParserErr::ParsingFailed(String::from("parsing failed"))
             },
             nom::Err::Failure(ctx) => ParserErr::ParsingFailed(String::from("parsing failed"))
         }
@@ -46,7 +52,7 @@ impl From<String> for ParserErr {
 }
 
 impl From<::std::string::FromUtf8Error> for ParserErr {
-    fn from(e: ::std::string::FromUtf8Error) -> Self {
+    fn from(_e: ::std::string::FromUtf8Error) -> Self {
         ParserErr::ParsingFailed("could not parse string as UTF8".to_string())
     }
 }
@@ -54,12 +60,15 @@ impl From<::std::string::FromUtf8Error> for ParserErr {
 impl From<ParserErr> for nom::Err<&[u8]> {
     fn from(e: ParserErr) -> Self {
         nom::Err::Failure(nom::Context::Code(b"TODO", nom::ErrorKind::Custom(0)))
-//        unimplemented!()
     }
 }
 
 impl fmt::Display for ParserErr {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        write!(f, "TODO")
+        match self {
+            ParserErr::EndedEarly(size) => write!(f, "file ended early"),
+            ParserErr::ParsingFailed(text) => write!(f, "{}", text),
+            ParserErr::EncodingError => write!(f, "UTF8 string encoding error")
+        }
     }
 }
