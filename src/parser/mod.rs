@@ -572,13 +572,16 @@ mod tests {
         res = parse_uleb128p1(&[0b10000000, 0b00000001]).unwrap();
         assert_eq!(res.1, 127);
 
-        res = parse_uleb128p1(&[0b11111111, 0b11111111, 0b11111111, 0b11111111, 0b01111111]).unwrap();
+        res = parse_uleb128p1(&[0b11111111, 0b11111111, 0b11111111, 0b11111111, 0b00000111]).unwrap();
         assert_eq!(res.1, std::i32::MAX - 1);
     }
 
     #[test]
     fn test_parse_sleb128() {
         let mut res = parse_sleb128(&[0b00000001]).unwrap();
+        assert_eq!(res.1, 1);
+
+        res = parse_sleb128(&[0b10000001, 0b00000000]).unwrap();
         assert_eq!(res.1, 1);
 
         res = parse_sleb128(&[0b10000000, 0b00000001]).unwrap();
