@@ -5,7 +5,10 @@ authors = ["Michael Degano <michael@dega.no>"]
 edition = "2018"
 
 [dependencies]
-nom = "*"
 leb128 = "*"
 byteorder = "*"
 mutf8 = "*"
+
+[dependencies.nom]
+version = "*"
+features = ["verbose-errors"]
