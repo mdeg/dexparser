@@ -241,9 +241,13 @@ pub struct RawMapListItem {
 // Docs: method_handle_item
 #[derive(Debug, PartialEq)]
 pub struct RawMethodHandleItem {
+    // method handle type (see reference for "Method Handle Type Codes")
     pub type_: u16,
+    // unused value
     pub unused_1: u16,
+    // ID for the field or method (depending on which one it is)
     pub field_or_method_id: u16,
+    // another unused value
     pub unused_2: u16
 }
 
@@ -261,8 +265,8 @@ pub struct RawCodeItem {
     pub insns_size: u32,
     pub insns: Vec<u16>,
     pub padding: Option<u16>,
-    pub tries: Option<Vec<RawTryItem>>,
-    pub handlers: Option<RawEncodedCatchHandlerList>
+    pub tries: Option<Vec<RawTryItem>>
+    // missing the handler here: need to break up processing to handle handler_off for try_item's
 }
 
 // Docs: try_item
@@ -273,6 +277,7 @@ pub struct RawTryItem {
     pub start_addr: u32,
     // number of 16-bit code units covered by this entry
     pub insn_count: u16,
+    // offset to the individual handler within the encoded_catch_handler_list block for the associated code_item
     pub handler_off: u16
 }
 

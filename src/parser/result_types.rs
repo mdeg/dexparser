@@ -287,7 +287,7 @@ pub struct Code {
 #[derive(Debug, PartialEq)]
 pub struct TryItem {
     pub code_units: Vec<u16>,
-    pub handler: Vec<EncodedCatchHandler>
+    pub handler: EncodedCatchHandler
 }
 
 // Docs: encoded_catch_handler

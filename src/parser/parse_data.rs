@@ -316,7 +316,7 @@ fn transform_encoded_fields(raw: &[RawEncodedField], fi: &[Rc<Field>]) -> Vec<En
     fields
 }
 
-fn transform_code_item<'a>(data: &'a[u8], data_off: usize, raw: RawCodeItem,
+fn transform_code_item<'a>(data: &'a[u8], data_off: usize, handler_off: usize, raw: RawCodeItem,
                            ti: &[Rc<TypeIdentifier>], e: nom::Endianness) -> nom::IResult<&'a[u8], Code> {
 
     let debug_info = if raw.debug_info_off == 0 {
@@ -339,9 +339,8 @@ fn transform_code_item<'a>(data: &'a[u8], data_off: usize, raw: RawCodeItem,
                                               raw_try.insn_count as usize, e)?.1;
 
             let handler = {
-                // TODO: unsure if this needs a different offset?
-                let rh = peek!(&data[raw_try.handler_off as usize ..], parse_encoded_catch_handler_list)?.1;
-                transform_encoded_catch_handler_list(rh, &ti)
+                let rh = peek!(&data[handler_off + raw_try.handler_off as usize ..], parse_encoded_catch_handler)?.1;
+                transform_encoded_catch_handler(rh, &ti)
             };
 
             tries.push(TryItem {
@@ -354,8 +353,12 @@ fn transform_code_item<'a>(data: &'a[u8], data_off: usize, raw: RawCodeItem,
         None
     };
 
-    let handlers = if let Some(rh) = raw.handlers {
-        Some(transform_encoded_catch_handler_list(rh, &ti))
+    let handlers = if handler_off != 0 {
+        Some(peek!(&data[handler_off as usize ..], parse_encoded_catch_handler_list)?.1
+            .list
+            .into_iter()
+            .map(|raw| transform_encoded_catch_handler(raw, &ti))
+            .collect())
     } else {
         None
     };
@@ -380,8 +383,16 @@ fn transform_encoded_methods<'a>(data: &'a[u8], data_off: usize, raw: &[RawEncod
         let code = if method.code_off == 0 {
             None
         } else {
-            let ci = parse_code_item(&data[method.code_off as usize - data_off ..], e)?.1;
-            Some(transform_code_item(data, data_off, ci, &ti, e)?.1)
+            // Have to stop parsing just before the handler here so we can get the handler offset
+            let (leftover, rci) = parse_code_item(&data[method.code_off as usize - data_off ..], e)?;
+
+            let handler_off = if rci.tries_size > 0 {
+                data.len() - leftover.len()
+            } else {
+                0
+            } as usize;
+
+            Some(transform_code_item(data, data_off, handler_off, rci, &ti, e)?.1)
         };
 
         methods.push(EncodedMethod {
@@ -396,17 +407,17 @@ fn transform_encoded_methods<'a>(data: &'a[u8], data_off: usize, raw: &[RawEncod
     Ok((data, methods))
 }
 
-// We can destructure out the RawEncodedCatchHandlerList and just return a Vec of EncodedCatchHandler's
-fn transform_encoded_catch_handler_list(rh: RawEncodedCatchHandlerList, ti: &[Rc<TypeIdentifier>]) -> Vec<EncodedCatchHandler> {
-    rh.list.into_iter()
-        .map(|raw| EncodedCatchHandler {
-            handlers: raw.handlers.into_iter()
-                .map(|raw| EncodedTypeAddrPair {
+fn transform_encoded_catch_handler(raw: RawEncodedCatchHandler, ti: &[Rc<TypeIdentifier>]) -> EncodedCatchHandler{
+    EncodedCatchHandler {
+        handlers: raw.handlers.into_iter()
+            .map(|raw| {
+                EncodedTypeAddrPair {
                     type_: ti[raw.type_idx as usize].clone(),
                     addr: raw.addr
-                }).collect(),
-            catch_all_addr: raw.catch_all_addr
-        }).collect()
+                }
+            }).collect(),
+        catch_all_addr: raw.catch_all_addr
+    }
 }
 
 // Docs: debug_info_item
@@ -424,21 +435,18 @@ named!(parse_debug_info_item<&[u8], RawDebugInfoItem>,
 
 // Docs: code_item
 named_args!(parse_code_item(e: nom::Endianness)<&[u8], RawCodeItem>,
-    peek!(
-        do_parse!(
-            registers_size: u16!(e) >>
-            ins_size: u16!(e)   >>
-            outs_size: u16!(e)  >>
-            tries_size: u16!(e) >>
-            debug_info_off: u32!(e) >>
-            insns_size: u32!(e) >>
-            insns: count!(u16!(e), insns_size as usize)  >>
-            padding: cond!(tries_size != 0 && insns_size % 2 != 0, u16!(e))  >>
-            tries: cond!(tries_size != 0, count!(call!(parse_try_item, e), tries_size as usize)) >>
-            handlers: cond!(tries_size != 0, call!(parse_encoded_catch_handler_list))  >>
-            (RawCodeItem { registers_size, ins_size, outs_size, tries_size, debug_info_off,
-             insns_size, insns, padding, tries, handlers })
-        )
+    do_parse!(
+        registers_size: u16!(e) >>
+        ins_size: u16!(e)   >>
+        outs_size: u16!(e)  >>
+        tries_size: u16!(e) >>
+        debug_info_off: u32!(e) >>
+        insns_size: u32!(e) >>
+        insns: count!(u16!(e), insns_size as usize)  >>
+        padding: cond!(tries_size != 0 && insns_size % 2 != 0, u16!(e))  >>
+        tries: cond!(tries_size != 0, count!(call!(parse_try_item, e), tries_size as usize)) >>
+        (RawCodeItem { registers_size, ins_size, outs_size, tries_size, debug_info_off,
+         insns_size, insns, padding, tries })
     )
 );
 
@@ -467,8 +475,8 @@ named!(parse_encoded_catch_handler_list<&[u8], RawEncodedCatchHandlerList>,
 named!(parse_encoded_catch_handler<&[u8], RawEncodedCatchHandler>,
     do_parse!(
         size: call!(parse_sleb128) >>
-        handlers: count!(call!(parse_encoded_type_addr_pair), size as usize) >>
-        catch_all_addr: cond!(size < 0, call!(parse_uleb128)) >>
+        handlers: count!(call!(parse_encoded_type_addr_pair), size.abs() as usize) >>
+        catch_all_addr: cond!(size <= 0, call!(parse_uleb128)) >>
         (RawEncodedCatchHandler { size, handlers, catch_all_addr })
     )
 );
