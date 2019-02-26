@@ -1,12 +1,12 @@
-mod encoded_value;
-mod error;
-mod result_types;
+// TODO: encoded_value shouldn't need to be pub
+pub mod encoded_value;
 mod raw_types;
 mod parse_data;
 
-use self::result_types::*;
+use crate::result_types::*;
+use crate::error::*;
+
 use self::raw_types::*;
-use self::error::*;
 use nom::*;
 
 // The magic that starts a DEX file

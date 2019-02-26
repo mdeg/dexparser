@@ -1,5 +1,5 @@
 use super::{parse_uleb128, take_one, Uleb128};
-use super::error::*;
+use crate::error::*;
 use super::parse_data::parse_annotation_element_item;
 use super::raw_types::*;
 use byteorder::ByteOrder;

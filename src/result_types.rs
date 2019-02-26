@@ -1,5 +1,6 @@
 use std::{fmt, rc::Rc};
-use super::encoded_value;
+// TODO: encoded_value shouldn't need to be pub
+use crate::parser::encoded_value;
 
 #[derive(Debug, PartialEq)]
 pub struct DexFile {

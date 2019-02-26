@@ -1,6 +1,6 @@
 use ::std::rc::Rc;
 use super::raw_types::*;
-use super::result_types::*;
+use crate::result_types::*;
 use super::*;
 
 fn transform_string_id_items<'a>(data: &'a[u8], sdi: &[u32], off: usize) -> nom::IResult<&'a[u8], Vec<Rc<StringData>>> {
@@ -989,7 +989,7 @@ mod tests {
     // helper function to generate a list of type identifiers
     fn generate_type_identifiers(size: i32) -> Vec<Rc<TypeIdentifier>> {
         let mut v = vec!();
-        for i in 0..size {
+        for _ in 0..size {
             v.push(Rc::new(TypeIdentifier {
                 descriptor: generate_string_data("SomeType".to_string())
             }))
