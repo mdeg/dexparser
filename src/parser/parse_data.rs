@@ -13,7 +13,7 @@ fn transform_string_id_items<'a>(data: &'a[u8], sdi: &[u32], off: usize) -> nom:
 
 fn transform_header(raw: &RawHeader, e: nom::Endianness) -> Result<Header, ParserErr> {
     Ok(Header {
-        version: String::from_utf8(raw.version.to_vec())?,
+        version: raw.version,
         checksum: raw.checksum.to_string(),
         signature: raw.signature,
         file_size: raw.file_size,

@@ -44,8 +44,7 @@ fn parse_dex_file(input: &[u8], e: nom::Endianness) -> Result<(&[u8], RawDexFile
         header: call!(parse_header, e) >>
         // Version 038 adds some new index pools with sizes not indicated in the header
         // For this version and higher, we'll need to peek at the map list to know their size for parsing
-        // TODO: versioning
-        map_list: cond!(true, peek!(call!(parse_map_list, &input[header.map_off as usize - (header.file_size as usize - input.len()) ..], e)))    >>
+        map_list: cond!(header.version >= 38, peek!(call!(parse_map_list, &input[header.map_off as usize - (header.file_size as usize - input.len()) ..], e)))    >>
         string_id_items: call!(parse_string_id_items, header.string_ids_size as usize, e) >>
         type_id_items: call!(parse_u32_list, header.type_ids_size as usize, e)  >>
         proto_id_items: call!(parse_proto_id_items, header.proto_ids_size as usize, e) >>
@@ -183,48 +182,63 @@ named_args!(parse_class_def_items(size: usize, e: nom::Endianness)<&[u8], Vec<Ra
         ), size)
 );
 
+// note that all offsets given here are offsets from the start of the file,
+// not the start of the data block
 named_args!(parse_header(e: nom::Endianness)<&[u8], RawHeader>,
     do_parse!(
-        // Little bit of magic at the start
+        // little bit of magic at the start
         tag!(DEX_FILE_MAGIC)                >>
-        // Followed by the version (0380 for example)
-        // TODO: convert these to digits and stringify them
-        // TODO: just take(4)
-        version: count_fixed!(u8, call!(take_one), 4) >>
+        // followed by the version (0380 for example)
+        version: map!(take!(4), parse_version) >>
         // adler32 checksum of the rest of this DEX file
-        // TODO: validate this later
         checksum: u32!(e)                   >>
         // SHA1 signature of the rest of the file
-        // TODO: verify this later
         signature: count_fixed!(u8, call!(take_one), 20)                >>
+        // size of the entire file
         file_size: u32!(e)                  >>
+        // size of the header
         header_size: u32!(e)                >>
+        // tag indicating endianness (see ENDIAN_CONSTANT)
         endian_tag: u32!(e)                 >>
+        // size of the linked data section
         link_size: u32!(e)                  >>
+        // starting offset of link data section
         link_off: u32!(e)                   >>
+        // starting offset of the map_list section
         map_off: u32!(e)                    >>
-        // Count of strings in the string identifier list
+        // count of string identifiers & offset into data
         string_ids_size: u32!(e)            >>
         string_ids_off: u32!(e)             >>
+        // count of type identifiers & offset into data
         type_ids_size: u32!(e)              >>
         type_ids_off: u32!(e)               >>
+        // count of prototypes & offset into data
         proto_ids_size: u32!(e)             >>
         proto_ids_off: u32!(e)              >>
+        // count of fields & offset into data
         field_ids_size: u32!(e)             >>
         field_ids_off: u32!(e)              >>
+        // count of methods & offset into data
         method_ids_size: u32!(e)            >>
         method_ids_off: u32!(e)             >>
+        // count of class definitions & offset into data
         class_defs_size: u32!(e)            >>
         class_defs_off: u32!(e)             >>
+        // size of data block & offset
         data_size: u32!(e)                  >>
         data_off: u32!(e)                   >>
 
-        (RawHeader { version, checksum, signature, file_size, header_size, endian_tag, link_size, link_off,
-         map_off, string_ids_size, string_ids_off, type_ids_size, type_ids_off, proto_ids_size,
-         proto_ids_off, field_ids_size, field_ids_off, method_ids_size, method_ids_off, class_defs_size,
-         class_defs_off, data_size, data_off })
+        (RawHeader { version, checksum, signature, file_size, header_size, endian_tag, link_size,
+         link_off, map_off, string_ids_size, string_ids_off, type_ids_size, type_ids_off,
+         proto_ids_size, proto_ids_off, field_ids_size, field_ids_off, method_ids_size,
+         method_ids_off, class_defs_size, class_defs_off, data_size, data_off })
     )
 );
+
+fn parse_version(value: &[u8]) -> i32 {
+    // TODO: remove this unwrap when error management is worked out
+    value[0..3].into_iter().map(|x| *x as char).collect::<String>().parse::<i32>().unwrap()
+}
 
 // Docs: method_handle_item
 named_args!(parse_method_handle_items(size: usize, e: nom::Endianness)<&[u8], Vec<RawMethodHandleItem>>,
@@ -238,6 +252,7 @@ named_args!(parse_method_handle_items(size: usize, e: nom::Endianness)<&[u8], Ve
     ), size)
 );
 //=============================
+
 #[derive(Debug, PartialEq)]
 enum AnnotationType {
     Class,

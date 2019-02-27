@@ -1,7 +1,6 @@
 use super::{Uleb128, Sleb128};
 
-// Raw type of the DEX file
-//
+// raw type for the first pass over the dex file
 #[derive(Debug, PartialEq)]
 pub struct RawDexFile {
     // Docs: header_item
@@ -19,7 +18,7 @@ pub struct RawDexFile {
     // Docs: class_def_item
     pub class_def_items: Vec<RawClassDefinition>,
     // Docs: call_site_item
-    // New in version 03x
+    // new in version 038
     pub call_site_idxs: Option<Vec<u32>>,
     // Docs: method_handle_item
     pub method_handle_idxs: Option<Vec<RawMethodHandleItem>>,
@@ -32,7 +31,7 @@ pub struct RawDexFile {
 #[derive(Debug, PartialEq)]
 pub struct RawHeader {
     // DEX file version
-    pub version: [u8; 4],
+    pub version: i32,
     // adler32 checksum of the rest of the file (everything except the magic, version, and this)
     pub checksum: u32,
     // SHA-1 hash of the rest of the file

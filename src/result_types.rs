@@ -47,7 +47,7 @@ impl fmt::Display for CallSiteItem {
 
 #[derive(Debug, PartialEq)]
 pub struct Header {
-    pub version: String,
+    pub version: i32,
     pub checksum: String,
     pub signature: [u8; 20],
     pub file_size: u32,
