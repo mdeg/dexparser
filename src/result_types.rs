@@ -1,5 +1,5 @@
 use std::{fmt, rc::Rc};
-// TODO: encoded_value shouldn't need to be pub
+// TODO (improvement): encoded_value shouldn't need to be pub
 use crate::parser::encoded_value;
 
 #[derive(Debug, PartialEq)]
@@ -35,12 +35,12 @@ impl fmt::Display for DexFile {
 
 #[derive(Debug, PartialEq)]
 pub struct CallSiteItem {
-    // TODO
+    // TODO (release)
 }
 
 impl fmt::Display for CallSiteItem {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        // TODO
+        // TODO (release)
         write!(f, "TODO")
     }
 }
@@ -56,7 +56,7 @@ pub struct Header {
 
 impl fmt::Display for Header {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        // TODO: some nice formatting for checksum
+        // TODO (release): some nice formatting for checksum
         write!(f, "version: {}\nchecksum: {}\nsignature: {:?}\nfile size (bytes): {}\nendianness: {}",
             self.version,
             self.checksum,
@@ -213,7 +213,6 @@ pub struct Annotations {
     pub class_annotations: Option<Vec<ClassAnnotation>>,
     pub field_annotations: Option<Vec<FieldAnnotation>>,
     pub method_annotations: Option<Vec<MethodAnnotation>>,
-    // TODO: ensure handling situations where this vec is empty
     pub parameter_annotations: Option<Vec<ParameterAnnotation>>
 }
 

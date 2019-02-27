@@ -338,7 +338,7 @@ mod tests {
     #[test]
     fn test_parse_float_value_single_byte() {
         // spec says a float may be encoded as a single byte
-        // TODO: is 0 the only IEEE754 float value that can be encoded with a single byte?
+        // TODO (release): is 0 the only IEEE754 float value that can be encoded with a single byte?
         let mut writer = vec!();
         // value type (float, 1 byte)
         writer.write_u8(0b00010000).unwrap();
@@ -353,7 +353,7 @@ mod tests {
         }
     }
 
-    // TODO: work out how exactly the spec encodes floats
+    // TODO (release): work out how exactly the spec encodes floats
 //    #[test]
 //    fn test_parse_float_value_two_bytes() {
 //        // a two byte value
@@ -402,9 +402,9 @@ mod tests {
         assert_eq!(res.1, EncodedValue::Double(123_f64))
     }
 
-    // TODO: write more tests for double values
+    // TODO (release): write more tests for double values
 
-    // TODO: write multi/single byte tests for method types
+    // TODO (release): write multi/single byte tests for method types
 
     #[test]
     fn test_parse_method_type() {

@@ -1,4 +1,4 @@
-// TODO: encoded_value shouldn't need to be pub
+// TODO (improvement): encoded_value shouldn't need to be pub
 pub mod encoded_value;
 mod raw_types;
 mod parse_data;
@@ -39,7 +39,6 @@ pub fn parse(buffer: &[u8]) -> Result<DexFile, ParserErr> {
     parse_data::transform_dex_file(raw, endianness)
 }
 
-// TODO: conds for string id, type id, etc
 fn parse_dex_file(input: &[u8], e: nom::Endianness) -> Result<(&[u8], RawDexFile), nom::Err<&[u8]>> {
     do_parse!(input,
         header: call!(parse_header, e) >>
@@ -237,7 +236,7 @@ named_args!(parse_header(e: nom::Endianness)<&[u8], RawHeader>,
 );
 
 fn parse_version(value: &[u8]) -> i32 {
-    // TODO: remove this unwrap when error management is worked out
+    // TODO (release): remove this unwrap when error management is worked out
     value[0..3].iter().map(|x| *x as char).collect::<String>().parse::<i32>().unwrap()
 }
 
@@ -354,7 +353,7 @@ mod tests {
     const e: nom::Endianness = nom::Endianness::Little;
 
     #[test]
-    // TODO: test endianness
+    // TODO (release): test endianness
     fn test_access_flag_bitmasking() {
         // all flags
         assert_eq!(AccessFlag::parse(std::u32::MAX, AnnotationType::Method).len(), 18);
@@ -566,7 +565,7 @@ mod tests {
         assert_eq!(res.1, vec!(1, 2));
     }
 
-    // TODO: redo this using writer
+    // TODO (improvement): redo this using writer
     #[test]
     fn test_determine_leb128_length() {
         assert_eq!(determine_leb128_length(&[0b00000001]), 1);
@@ -616,7 +615,7 @@ mod tests {
         assert_eq!(res.1, -1);
     }
 
-    // TODO: test parse_header
+    // TODO (release): test parse_header
 
-    // TODO: test parse_dex_file
+    // TODO (release): test parse_dex_file
 }

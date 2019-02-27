@@ -25,7 +25,6 @@ impl<E: fmt::Debug + Clone> From<nom::Err<E>> for ParserErr {
 //                        std::dbg!(position);
                         std::dbg!(kind);
                     },
-                    // TODO: cfg flag this
                     nom::Context::List(errors) => {
                         for error in errors {
                             std::dbg!(error.1);
