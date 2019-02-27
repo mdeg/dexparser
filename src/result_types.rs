@@ -16,11 +16,11 @@ pub struct DexFile {
 
 impl fmt::Display for DexFile {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Header:{}\nStrings: {}\nType Identifiers: {}\nPrototypes: {}\nFields: {}\n
+        write!(f, "Header: \t{}\nStrings: {}\nType Identifiers: {}\nPrototypes: {}\nFields: {}\n
             Methods: {}\nClass Definitions: {}\nCall Site Items: {}\n",
             &self.header,
-            &self.string_data.iter().map(|x| x.data.clone()).collect::<String>(),
-            &self.type_identifiers.iter().map(|x| (*x.descriptor).data.clone()).collect::<String>(),
+            &self.string_data.iter().map(|x| x.data.clone()).collect::<Vec<String>>().join(", "),
+            &self.type_identifiers.iter().map(|x| (*x.descriptor).data.clone()).collect::<Vec<String>>().join(", "),
             &self.prototypes.iter().map(|x| format!("{}", x)).collect::<String>(),
             &self.fields.iter().map(|x| format!("{}", x)).collect::<String>(),
             &self.methods.iter().map(|x| format!("{}", x)).collect::<String>(),
@@ -78,7 +78,7 @@ pub struct StringData {
 
 impl fmt::Display for StringData {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.data)
+        write!(f, "{}\n", self.data)
     }
 }
 
@@ -89,7 +89,7 @@ pub struct TypeIdentifier {
 
 impl fmt::Display for TypeIdentifier {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.descriptor)
+        write!(f, "{}\n", self.descriptor)
     }
 }
 
@@ -102,12 +102,14 @@ pub struct Prototype {
 
 impl fmt::Display for Prototype {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        if let Some(p) = &self.parameters {
-            // TODO
-            write!(f, "shorty: {}\nreturn type: {}\n parameters: {}", self.shorty, self.return_type, "TODO")
-        } else {
-            write!(f, "shorty: {}\nreturn type: {}\n parameters: -", self.shorty, self.return_type)
-        }
+        write!(f, "shorty: {}\nreturn type: {}\nparameters: {}\n",
+            &self.shorty,
+            &self.return_type,
+            match &self.parameters {
+                None => "-".to_string(),
+                Some(i) => i.iter().map(ToString::to_string).collect::<Vec<String>>().join(", ")
+            }
+        )
     }
 }
 
@@ -133,7 +135,7 @@ pub struct Method {
 
 impl fmt::Display for Method {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "definer: {}\nprototype: {}\nname: {}", self.definer, self.prototype, self.name)
+        write!(f, "definer: {}\nprototype: {}\nname: {}\n", self.definer, self.prototype, self.name)
     }
 }
 
@@ -144,6 +146,16 @@ pub struct ClassAnnotation {
     pub elements: Vec<AnnotationElement>
 }
 
+impl fmt::Display for ClassAnnotation {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "visibility: {}\ntype: {}\nelements: {}",
+            &self.visibility,
+            &self.type_,
+            &self.elements.iter().map(ToString::to_string).collect::<Vec<String>>().join(", ")
+        )
+    }
+}
+
 #[derive(Debug, PartialEq, Clone)]
 pub struct AnnotationElement {
     pub name: Rc<StringData>,
@@ -152,7 +164,7 @@ pub struct AnnotationElement {
 
 impl fmt::Display for AnnotationElement {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "name: {}\nvalue: {}", self.name, self.value)
+        write!(f, "name: {}\tvalue: {}", self.name, self.value)
     }
 }
 
@@ -170,11 +182,28 @@ pub struct ClassDefinition {
 
 impl fmt::Display for ClassDefinition {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}",
-            *self.class_type
-            // TODO
-
-
+        write!(f, "class type: {}\naccess flags: {}\nsuperclass: {}\ninterfaces: {}\nsource file name: {}\nannotations: {}\n",
+           *self.class_type,
+            self.access_flags.iter()
+               .map(ToString::to_string)
+               .collect::<Vec<String>>()
+               .join(", "),
+            match &self.superclass {
+                None => "-".to_string(),
+                Some(i) => i.to_string()
+            },
+            match &self.interfaces {
+                None => "-".to_string(),
+                Some(i) => i.iter().map(ToString::to_string).collect::<Vec<String>>().join(", ")
+            },
+            match &self.source_file_name {
+                None => "-".to_string(),
+                Some(i) => format!("{}", i)
+            },
+            match &self.annotations {
+                None => "-".to_string(),
+                Some(i) => format!("{}\n", i)
+            }
         )
     }
 }
@@ -186,6 +215,17 @@ pub struct Annotations {
     pub method_annotations: Option<Vec<MethodAnnotation>>,
     // TODO: ensure handling situations where this vec is empty
     pub parameter_annotations: Option<Vec<ParameterAnnotation>>
+}
+
+impl fmt::Display for Annotations {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            write!(f, "class annotations: {}\n",
+            match &self.class_annotations {
+                None => "-".to_string(),
+                Some(i) => i.iter().map(ToString::to_string).collect::<Vec<String>>().join(", ")
+            }
+        )
+    }
 }
 
 #[derive(Debug, PartialEq)]

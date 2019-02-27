@@ -8,6 +8,7 @@ use crate::error::*;
 
 use self::raw_types::*;
 use nom::*;
+use std::fmt;
 
 // The magic that starts a DEX file
 const DEX_FILE_MAGIC: [u8; 4] = [0x64, 0x65, 0x78, 0x0A];
@@ -338,6 +339,12 @@ impl AccessFlag {
     }
 }
 
+impl fmt::Display for AccessFlag {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -349,9 +356,9 @@ mod tests {
     #[test]
     // TODO: test endianness
     fn test_access_flag_bitmasking() {
-        // Christmas tree
+        // all flags
         assert_eq!(AccessFlag::parse(std::u32::MAX, AnnotationType::Method).len(), 18);
-        // No flags
+        // no flags
         assert_eq!(AccessFlag::parse(std::u32::MIN, AnnotationType::Method).len(), 0);
     }
 

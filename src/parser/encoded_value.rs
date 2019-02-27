@@ -129,11 +129,10 @@ impl fmt::Display for EncodedValue {
 
 impl ::std::fmt::Display for EncodedArrayItem {
     fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
-        let mut vals = String::new();
-        for v in &self.values {
-            vals = format!("{}\n{}", vals, v);
-        }
-        write!(f, "{}", vals)
+        write!(f, "[{}]", &self.values.iter()
+            .map(ToString::to_string)
+            .collect::<Vec<String>>()
+            .join(", "))
     }
 }
 
