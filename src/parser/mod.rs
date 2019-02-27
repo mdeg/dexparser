@@ -16,7 +16,7 @@ const ENDIAN_CONSTANT: [u8; 4] = [0x12, 0x34, 0x56, 0x78];
 // Indicates modified non-standard (big-endian) encoding
 const REVERSE_ENDIAN_CONSTANT: [u8; 4] = [0x78, 0x56, 0x34, 0x12];
 
-const NO_INDEX: u32 = 0xffffffff;
+const NO_INDEX: u32 = 0xFFFFFFFF;
 
 type Uleb128 = u32;
 type Sleb128 = i32;
@@ -40,7 +40,7 @@ pub fn parse(buffer: &[u8]) -> Result<DexFile, ParserErr> {
 
 // TODO: conds for string id, type id, etc
 fn parse_dex_file(input: &[u8], e: nom::Endianness) -> Result<(&[u8], RawDexFile), nom::Err<&[u8]>> {
-    dbg!(input, do_parse!(
+    do_parse!(input,
         header: call!(parse_header, e) >>
         // Version 038 adds some new index pools with sizes not indicated in the header
         // For this version and higher, we'll need to peek at the map list to know their size for parsing
@@ -57,7 +57,7 @@ fn parse_dex_file(input: &[u8], e: nom::Endianness) -> Result<(&[u8], RawDexFile
         link_data: cond!(header.link_off > 0, map!(eof!(), |ld| { ld.to_vec() }))   >>
         (RawDexFile { header, string_id_items, type_id_items, proto_id_items, field_id_items,
             method_id_items, class_def_items, call_site_idxs, method_handle_idxs, data, link_data })
-    ))
+    )
 }
 
 named!(take_one<&[u8], u8>, map!(take!(1), |x| { x[0] }));
@@ -237,7 +237,7 @@ named_args!(parse_header(e: nom::Endianness)<&[u8], RawHeader>,
 
 fn parse_version(value: &[u8]) -> i32 {
     // TODO: remove this unwrap when error management is worked out
-    value[0..3].into_iter().map(|x| *x as char).collect::<String>().parse::<i32>().unwrap()
+    value[0..3].iter().map(|x| *x as char).collect::<String>().parse::<i32>().unwrap()
 }
 
 // Docs: method_handle_item

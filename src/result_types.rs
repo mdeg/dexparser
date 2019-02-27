@@ -26,7 +26,7 @@ impl fmt::Display for DexFile {
             &self.methods.iter().map(|x| format!("{}", x)).collect::<String>(),
             &self.class_def_items.iter().map(|x| format!("{}\n", x)).collect::<String>(),
             match &self.call_site_items {
-                None => format!(""),
+                None => "".to_string(),
                 Some(x) => x.iter().map(|x| format!("{}", x)).collect::<String>()
             }
         )

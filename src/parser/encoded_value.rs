@@ -119,8 +119,8 @@ impl fmt::Display for EncodedValue {
             EncodedValue::Method(ref i) => write!(f, "{}", i),
             EncodedValue::Enum(ref i) => write!(f, "{}", i),
             EncodedValue::Array(ref i) => write!(f, "{}", i),
-            // TODO: this should never be printed as a raw value, right?
-            EncodedValue::Annotation(_) => unimplemented!(),
+            // indicates coding error - raw values should never reach output
+            EncodedValue::Annotation(_) => panic!("attempted to display raw annotation value"),
             EncodedValue::Null => write!(f, "null"),
             EncodedValue::Boolean(ref i) => write!(f, "{}", i)
         }
@@ -212,8 +212,6 @@ mod tests {
         writer.write_u8(0x01).unwrap();
         let err = parse_encoded_value_item(&writer);
         assert!(err.is_err());
-        // TODO
-//        assert_eq!(err.err().unwrap(), nom::Err::Failure);
     }
 
     #[test]
