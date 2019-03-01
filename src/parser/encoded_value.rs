@@ -79,6 +79,8 @@ named!(pub parse_encoded_array_item<&[u8], EncodedArrayItem>,
     )
 );
 
+// TODO (release): this should be raw encoded value, and everything destructured out
+// Specifically the method types and handles which are indexes into the string/prototype/etc stuff!!!
 #[derive(Debug, PartialEq, Clone)]
 pub enum EncodedValue {
     Byte(u8),
@@ -120,7 +122,9 @@ impl fmt::Display for EncodedValue {
             EncodedValue::Enum(ref i) => write!(f, "{}", i),
             EncodedValue::Array(ref i) => write!(f, "{}", i),
             // indicates coding error - raw values should never reach output
-            EncodedValue::Annotation(_) => panic!("attempted to display raw annotation value"),
+            // TODO (release): should this panic?
+            EncodedValue::Annotation(_) => write!(f, "TODO"),
+//            EncodedValue::Annotation(_) => panic!("attempted to display raw annotation value"),
             EncodedValue::Null => write!(f, "null"),
             EncodedValue::Boolean(ref i) => write!(f, "{}", i)
         }
@@ -138,8 +142,8 @@ impl ::std::fmt::Display for EncodedArrayItem {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct EncodedArrayItem {
-    size: Uleb128,
-    values: Vec<EncodedValue>
+    pub size: Uleb128,
+    pub values: Vec<EncodedValue>
 }
 
 #[derive(Debug)]
