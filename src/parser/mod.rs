@@ -24,6 +24,8 @@ type Sleb128 = i32;
 
 pub fn parse(buffer: &[u8]) -> Result<DexFile, ParserErr> {
 
+    // TODO (release): throw an error if the buffer is too short
+    // TODO (release): work out this endian business - the constants here are swapped
     // Peek ahead to determine endianness
     let endianness = {
         if buffer[40 .. 44] == ENDIAN_CONSTANT {
@@ -39,29 +41,65 @@ pub fn parse(buffer: &[u8]) -> Result<DexFile, ParserErr> {
     parse_data::transform_dex_file(raw, endianness)
 }
 
-fn parse_dex_file(input: &[u8], e: nom::Endianness) -> Result<(&[u8], RawDexFile), nom::Err<&[u8]>> {
-    do_parse!(input,
-        header: call!(parse_header, e) >>
-        // Version 038 adds some new index pools with sizes not indicated in the header
-        // For this version and higher, we'll need to peek at the map list to know their size for parsing
-        map_list: cond!(header.version >= 38, peek!(call!(parse_map_list, &input[header.map_off as usize - (header.file_size as usize - input.len()) ..], e)))    >>
-        string_id_items: call!(parse_string_id_items, header.string_ids_size as usize, e) >>
-        type_id_items: call!(parse_u32_list, header.type_ids_size as usize, e)  >>
-        proto_id_items: call!(parse_proto_id_items, header.proto_ids_size as usize, e) >>
-        field_id_items: call!(parse_field_id_items, header.field_ids_size as usize, e)   >>
-        method_id_items: call!(parse_method_id_items, header.method_ids_size as usize, e)  >>
-        class_def_items: call!(parse_class_def_items, header.class_defs_size as usize, e) >>
-        call_site_idxs: cond!(map_list.is_some(), call!(parse_u32_list, map_list.as_ref().unwrap().list.iter().filter(|item| item.type_ == MapListItemType::CALL_SITE_ID_ITEM).count(), e)) >>
-        method_handle_idxs: cond!(map_list.is_some(), call!(parse_method_handle_items, map_list.as_ref().unwrap().list.iter().filter(|item| item.type_  == MapListItemType::METHOD_HANDLE_ITEM).count(), e))   >>
-        data: map!(take!(header.data_size), |d| { d.to_vec() })  >>
-        link_data: cond!(header.link_off > 0, map!(eof!(), |ld| { ld.to_vec() }))   >>
-        (RawDexFile { header, string_id_items, type_id_items, proto_id_items, field_id_items,
-            method_id_items, class_def_items, call_site_idxs, method_handle_idxs, data, link_data })
-    )
+fn parse_dex_file(input: &[u8], e: nom::Endianness) -> nom::IResult<&[u8], RawDexFile> {
+
+    let header = parse_header(input, e)?.1;
+
+    let string_id_items = parse_string_id_items(&input[header.string_ids_off as usize ..],
+                                                header.string_ids_size as usize, e)?.1;
+
+    let type_id_items = parse_u32_list(&input[header.type_ids_off as usize ..],
+                                       header.type_ids_size as usize, e)?.1;
+
+    let proto_id_items = parse_proto_id_items(&input[header.proto_ids_off as usize ..],
+                                                header.proto_ids_size as usize, e)?.1;
+
+    let field_id_items = parse_field_id_items(&input[header.field_ids_off as usize ..],
+                                                header.field_ids_size as usize, e)?.1;
+
+    let method_id_items = parse_method_id_items(&input[header.method_ids_off as usize ..],
+                                                header.method_ids_size as usize, e)?.1;
+
+    // store the remainder left after parsing here
+    let (remainder, class_def_items) = parse_class_def_items(&input[header.class_defs_off as usize ..], header.class_defs_size as usize, e)?;
+
+    // Version 038 adds some new index pools with sizes not indicated in the header
+    // For this version and higher, we'll need to peek at the map list to know their size for parsing
+    // TODO (release): verify this! Maybe it should just output the map list in a traversable format?
+    let (call_site_idxs, method_handle_idxs) = if header.version >= 38 {
+        let map_list = call!(&input[header.map_off as usize ..], parse_map_list, e)?.1.list;
+
+        //TODO: simplify this
+        let csi_count = map_list.iter()
+            .filter(|item| item.type_ == MapListItemType::CALL_SITE_ID_ITEM).count();
+        let mhi_count = map_list.iter()
+            .filter(|item| item.type_ == MapListItemType::METHOD_HANDLE_ITEM).count();
+
+        let (remainder, call_site_idxs) = call!(&remainder, parse_u32_list, csi_count, e)?;
+        let method_handle_idxs = call!(&remainder, parse_method_handle_items, mhi_count, e)?.1;
+
+        (Some(call_site_idxs), Some(method_handle_idxs))
+    } else {
+        (None, None)
+    };
+
+    // anything left after data is just link data
+    let (ld, data) = map!(&input[header.data_off as usize ..], take!(header.data_size), |d| { d.to_vec() })?;
+
+    let link_data = if ld.len() > 0 {
+        Some(ld.to_vec())
+    } else {
+        None
+    };
+
+    Ok((&[], RawDexFile { header, string_id_items, type_id_items, proto_id_items, field_id_items,
+            method_id_items, class_def_items, call_site_idxs, method_handle_idxs, data, link_data }))
 }
 
+// simple wrapper around the take!() macro so it returns a u8 instead of &[u8]
 named!(take_one<&[u8], u8>, map!(take!(1), |x| { x[0] }));
 
+// TODO (release): test if this works in byteswapped files
 pub fn determine_leb128_length(input: &[u8]) -> usize {
     input.iter()
         .take_while(|byte| (*byte & 0x80) != 0)
@@ -107,8 +145,8 @@ named_args!(parse_string_id_items(size: usize, e: nom::Endianness)<&[u8], Vec<u3
 named_args!(parse_u32_list(size: usize, e: nom::Endianness)<&[u8], Vec<u32>>, count!(u32!(e), size));
 
 // Docs: map_list
-fn parse_map_list<'a>(_: &[u8], data: &'a[u8], e: nom::Endianness) -> nom::IResult<&'a[u8], RawMapList> {
-    do_parse!(data,
+named_args!(parse_map_list(e: nom::Endianness)<&[u8], RawMapList>,
+    do_parse!(
         size: u32!(e)                                           >>
         list: count!(do_parse!(
                 type_: map_res!(u16!(e), MapListItemType::parse)    >>
@@ -117,10 +155,9 @@ fn parse_map_list<'a>(_: &[u8], data: &'a[u8], e: nom::Endianness) -> nom::IResu
                 offset: u32!(e)                                 >>
                 (RawMapListItem { type_, unused, size, offset })
             ), size as usize)                                   >>
-
         (RawMapList { size, list })
     )
-}
+);
 
 // Docs: type_list
 named_args!(parse_type_list(e: nom::Endianness)<&[u8], RawTypeList>,
