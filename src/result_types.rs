@@ -35,7 +35,10 @@ impl fmt::Display for DexFile {
 
 #[derive(Debug, PartialEq)]
 pub struct CallSiteItem {
-    // TODO (release)
+    pub method_handle: Rc<Method>,
+    pub method_name: Rc<StringData>,
+    pub method_type: Rc<Prototype>,
+    pub constant_values: Option<Vec<encoded_value::EncodedValue>>
 }
 
 impl fmt::Display for CallSiteItem {

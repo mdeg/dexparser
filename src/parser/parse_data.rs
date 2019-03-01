@@ -1,3 +1,5 @@
+// TODO (improvement): review peeks, not necessary if we don't use the return
+
 use ::std::rc::Rc;
 use super::raw_types::*;
 use crate::result_types::*;
@@ -75,18 +77,42 @@ pub fn transform_dex_file(raw: RawDexFile, e: nom::Endianness) -> Result<DexFile
     let class_def_items = transform_class_defs(&raw.data, off, &raw.class_def_items, &ti, &sd,
                                                &fields, &methods, header.endianness)?.1;
 
-
+    // TODO (release): put this in a separate function
     let call_site_items = if let Some(csi) = raw.call_site_idxs {
         let mut v = Vec::new();
         for idx in csi {
             // TODO (release): test parsing call_site_items
-            let x = encoded_value::parse_encoded_array_item(&raw.data[idx as usize - off ..])?.1;
+            unimplemented!();
+            ::std::dbg!("=========== CALL SITE ITEMS ====== ");
+            // TODO: is this raw call site item?
 
-            std::dbg!(idx);
-            println!("{:?}", x);
-            std::dbg!(x);
+            let array = encoded_value::parse_encoded_array_item(&raw.data[idx as usize - off ..])?.1;
 
-            v.push(CallSiteItem {})
+            let method_handle = if encoded_value::EncodedValue::MethodHandle(idx) == array.values[0] {
+                methods[idx as usize].clone()
+            } else {
+                return Err(ParserErr::from("call site item could not be parsed: bootstrap linker method handle malformed"));
+            };
+
+            let method_name = if encoded_value::EncodedValue::String(idx) == array.values[1] {
+                sd[idx as usize].clone()
+            } else {
+                return Err(ParserErr::from("call site item could not be parsed: bootstrap linker method name malformed"));
+            };
+
+            let method_type = if encoded_value::EncodedValue::MethodType(idx) == array.values[2] {
+                pro[idx as usize].clone()
+            } else {
+                return Err(ParserErr::from("call site item could not be parsed: bootstrap linker method type malformed"));
+            };
+
+            let constant_values = if array.values.len() > 3 {
+                Some(array.values[3 ..].to_vec())
+            } else {
+                None
+            };
+
+            v.push(CallSiteItem { method_handle, method_name, method_type, constant_values })
         }
         Some(v)
     } else {
@@ -103,10 +129,6 @@ pub fn transform_dex_file(raw: RawDexFile, e: nom::Endianness) -> Result<DexFile
         class_def_items,
         call_site_items
     })
-}
-
-fn parse_call_site_items() {
-
 }
 
 fn transform_annotations<'a>(data: &'a[u8], off: usize, data_off: usize, sd: &[Rc<StringData>],
