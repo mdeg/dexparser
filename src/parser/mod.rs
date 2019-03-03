@@ -16,15 +16,20 @@ const DEX_FILE_MAGIC: [u8; 4] = [0x64, 0x65, 0x78, 0x0A];
 const ENDIAN_CONSTANT: [u8; 4] = [0x12, 0x34, 0x56, 0x78];
 // Indicates modified non-standard (big-endian) encoding
 const REVERSE_ENDIAN_CONSTANT: [u8; 4] = [0x78, 0x56, 0x34, 0x12];
-
+// Header size is a constant 70 bytes according to the spec
+const HEADER_SIZE: usize = 70;
+// Special value indicating there is no index value
 const NO_INDEX: u32 = 0xFFFFFFFF;
 
 type Uleb128 = u32;
 type Sleb128 = i32;
 
 pub fn parse(buffer: &[u8]) -> Result<DexFile, ParserErr> {
+    // any DEX file will need to be at least as big as the header
+    if buffer.len() < HEADER_SIZE {
+        return Err(ParserErr::from(format!("buffer length {} is too short", buffer.len())));
+    }
 
-    // TODO (release): throw an error if the buffer is too short
     // TODO (release): work out this endian business - the constants here are swapped
     // Peek ahead to determine endianness
     let endianness = {
@@ -69,7 +74,6 @@ fn parse_dex_file(input: &[u8], e: nom::Endianness) -> nom::IResult<&[u8], RawDe
     let (call_site_idxs, method_handle_idxs) = if header.version >= 38 {
         let map_list = call!(&input[header.map_off as usize ..], parse_map_list, e)?.1.list;
 
-        //TODO: simplify this
         let csi_count = map_list.iter()
             .filter(|item| item.type_ == MapListItemType::CALL_SITE_ID_ITEM).count();
         let mhi_count = map_list.iter()
@@ -655,4 +659,6 @@ mod tests {
     // TODO (release): test parse_header
 
     // TODO (release): test parse_dex_file
+
+    // TODO: test NO_INDEX
 }
