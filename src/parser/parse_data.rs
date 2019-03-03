@@ -13,7 +13,7 @@ fn transform_string_id_items<'a>(data: &'a[u8], sdi: &[u32], off: usize) -> nom:
     Ok((data, v))
 }
 
-fn transform_header(raw: &RawHeader, e: nom::Endianness) -> Result<Header, ParserErr> {
+fn transform_header(raw: &RawHeader, e: nom::Endianness) -> Result<Header, DexParserError> {
     Ok(Header {
         version: raw.version,
         checksum: raw.checksum.to_string(),
@@ -46,7 +46,7 @@ fn transform_prototype_id_items<'a>(data: &'a[u8], proto_ids: &[RawPrototype], s
     Ok((data, v))
 }
 
-pub fn transform_dex_file(raw: RawDexFile, e: nom::Endianness) -> Result<DexFile, ParserErr> {
+pub fn transform_dex_file(raw: RawDexFile, e: nom::Endianness) -> Result<DexFile, DexParserError> {
 
     // Offsets are given, but we only have the data blob here, so we'll need to do some math
     let off = raw.header.data_off as usize;
@@ -91,19 +91,19 @@ pub fn transform_dex_file(raw: RawDexFile, e: nom::Endianness) -> Result<DexFile
             let method_handle = if encoded_value::EncodedValue::MethodHandle(idx) == array.values[0] {
                 methods[idx as usize].clone()
             } else {
-                return Err(ParserErr::from("call site item could not be parsed: bootstrap linker method handle malformed"));
+                return Err(DexParserError::from("call site item could not be parsed: bootstrap linker method handle malformed"));
             };
 
             let method_name = if encoded_value::EncodedValue::String(idx) == array.values[1] {
                 sd[idx as usize].clone()
             } else {
-                return Err(ParserErr::from("call site item could not be parsed: bootstrap linker method name malformed"));
+                return Err(DexParserError::from("call site item could not be parsed: bootstrap linker method name malformed"));
             };
 
             let method_type = if encoded_value::EncodedValue::MethodType(idx) == array.values[2] {
                 pro[idx as usize].clone()
             } else {
-                return Err(ParserErr::from("call site item could not be parsed: bootstrap linker method type malformed"));
+                return Err(DexParserError::from("call site item could not be parsed: bootstrap linker method type malformed"));
             };
 
             let constant_values = if array.values.len() > 3 {
@@ -186,7 +186,7 @@ fn transform_annotations<'a>(data: &'a[u8], off: usize, data_off: usize, sd: &[R
 }
 
 fn transform_annotation_item(item: RawAnnotationItem, sd: &[Rc<StringData>],
-                             ti: &[Rc<TypeIdentifier>]) -> Result<AnnotationItem, ParserErr> {
+                             ti: &[Rc<TypeIdentifier>]) -> Result<AnnotationItem, DexParserError> {
     Ok(AnnotationItem {
         visibility: Visibility::parse(item.visibility)?,
         type_: ti[item.annotation.type_idx as usize].clone(),

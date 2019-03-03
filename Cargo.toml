@@ -8,6 +8,7 @@ edition = "2018"
 leb128 = "*"
 byteorder = "*"
 mutf8 = "*"
+failure = "*"
 
 [dependencies.nom]
 version = "*"

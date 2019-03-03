@@ -131,7 +131,7 @@ enum EncodedValueType {
 }
 
 impl EncodedValueType {
-    fn parse(value: u8) -> Result<Self, ParserErr> {
+    fn parse(value: u8) -> Result<Self, DexParserError> {
         match value {
             0x00 => Ok(EncodedValueType::Byte),
             0x02 => Ok(EncodedValueType::Short),
@@ -151,7 +151,7 @@ impl EncodedValueType {
             0x1D => Ok(EncodedValueType::Annotation),
             0x1E => Ok(EncodedValueType::Null),
             0x1F => Ok(EncodedValueType::Boolean),
-            _ => Err(ParserErr::from(format!("Could not find encoded value type for 0x{:02X}", value)))
+            _ => Err(DexParserError::from(format!("Could not find encoded value type for 0x{:02X}", value)))
         }
     }
 }

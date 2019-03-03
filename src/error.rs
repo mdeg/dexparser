@@ -1,73 +1,83 @@
-use ::std::fmt;
+use failure::Fail;
 
-#[derive(Debug, Clone)]
-pub enum ParserErr {
-    EndedEarly(usize),
-    ParsingFailed(String),
+#[derive(Debug, Fail, Clone)]
+pub enum DexParserError {
+    #[fail(display = "file unexpectedly ended early: expected {} bytes", needed)]
+    EndedEarly {
+        needed: usize
+    },
+    #[fail(display = "could not parse file: {}", reason)]
+    ParsingFailed {
+        reason: String
+    },
+    #[fail(display = "could not decode string to UTF8: may be malformed")]
     EncodingError
 }
 
-impl std::error::Error for ParserErr {}
-
-impl<E: fmt::Debug + Clone> From<nom::Err<E>> for ParserErr {
+impl<E: std::fmt::Debug + Clone> From<nom::Err<E>> for DexParserError {
     fn from(e: nom::Err<E>) -> Self {
-
         match e {
             nom::Err::Incomplete(ref needed) => {
                 match needed {
-                    nom::Needed::Unknown => ParserErr::ParsingFailed(String::from("file ended early")),
-                    nom::Needed::Size(size) => ParserErr::EndedEarly(*size)
+                    nom::Needed::Unknown => DexParserError::ParsingFailed { reason: "file ended early".to_string() },
+                    nom::Needed::Size(size) => DexParserError::EndedEarly { needed: *size }
                 }
             },
             nom::Err::Error(ctx) => {
                 match ctx {
                     nom::Context::Code(pos, kind) => {
-//                        std::dbg!(position);
-                        std::dbg!(kind);
+                        DexParserError::ParsingFailed { reason: format!("parsing failed at byte {:?}: parser {:?}", pos, kind) }
                     },
                     nom::Context::List(errors) => {
-                        for error in errors {
-                            std::dbg!(error.1);
-                        }
+                        let reason = errors.iter()
+                            .map(|(pos, kind)| format!("parsing failed at byte {:?}: parser {:?}", pos, kind))
+                            .collect::<Vec<String>>()
+                            .join(": ");
+
+                        DexParserError::ParsingFailed { reason }
                     }
                 }
-                ParserErr::ParsingFailed(String::from("parsing failed"))
             },
-            nom::Err::Failure(ctx) => ParserErr::ParsingFailed(String::from("parsing failed"))
+            nom::Err::Failure(ctx) => {
+                match ctx {
+                    nom::Context::Code(pos, kind) => {
+                        DexParserError::ParsingFailed { reason: format!("parsing failed at byte {:?}: parser {:?}", pos, kind) }
+                    },
+                    nom::Context::List(errors) => {
+                        let reason = errors.iter()
+                            .map(|(pos, kind)| format!("parsing failed at byte {:?}: parser {:?}", pos, kind))
+                            .collect::<Vec<String>>()
+                            .join(": ");
+
+                        DexParserError::ParsingFailed { reason }
+                    }
+                }
+            }
         }
     }
 }
 
-impl From<&'static str> for ParserErr {
+impl From<&'static str> for DexParserError {
     fn from(e: &'static str) -> Self {
-        ParserErr::ParsingFailed(e.to_string())
+        DexParserError::ParsingFailed { reason: e.to_string() }
     }
 }
 
-impl From<String> for ParserErr {
+impl From<String> for DexParserError {
     fn from(e: String) -> Self {
-        ParserErr::ParsingFailed(e)
+        DexParserError::ParsingFailed { reason: e }
     }
 }
 
-impl From<::std::string::FromUtf8Error> for ParserErr {
+impl From<::std::string::FromUtf8Error> for DexParserError {
     fn from(_e: ::std::string::FromUtf8Error) -> Self {
-        ParserErr::ParsingFailed("could not parse string as UTF8".to_string())
+        DexParserError::ParsingFailed { reason: "could not parse string as UTF8".to_string() }
     }
 }
 
-impl From<ParserErr> for nom::Err<&[u8]> {
-    fn from(e: ParserErr) -> Self {
+impl From<DexParserError> for nom::Err<&[u8]> {
+    fn from(e: DexParserError) -> Self {
+        // TODO (release) - work out how to build a proper error here, or avoid converting back and forth
         nom::Err::Failure(nom::Context::Code(b"TODO", nom::ErrorKind::Custom(0)))
-    }
-}
-
-impl fmt::Display for ParserErr {
-    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        match self {
-            ParserErr::EndedEarly(size) => write!(f, "file ended early"),
-            ParserErr::ParsingFailed(text) => write!(f, "{}", text),
-            ParserErr::EncodingError => write!(f, "UTF8 string encoding error")
-        }
     }
 }

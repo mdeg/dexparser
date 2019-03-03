@@ -23,10 +23,10 @@ const NO_INDEX: u32 = 0xFFFFFFFF;
 type Uleb128 = u32;
 type Sleb128 = i32;
 
-pub fn parse(buffer: &[u8]) -> Result<DexFile, ParserErr> {
+pub fn parse(buffer: &[u8]) -> Result<DexFile, DexParserError> {
     // any DEX file will need to be at least as big as the header
     if buffer.len() < HEADER_SIZE {
-        return Err(ParserErr::from(format!("buffer length {} is too short", buffer.len())));
+        return Err(DexParserError::from(format!("buffer length {} is too short", buffer.len())));
     }
 
     // TODO (release): work out this endian business - the constants here are swapped
@@ -37,7 +37,7 @@ pub fn parse(buffer: &[u8]) -> Result<DexFile, ParserErr> {
         } else if buffer[40 .. 44] == REVERSE_ENDIAN_CONSTANT {
             nom::Endianness::Little
         } else {
-            return Err(ParserErr::ParsingFailed(String::from("could not determine endianness")));
+            return Err(DexParserError::from("could not determine endianness"));
         }
     };
 
@@ -301,18 +301,18 @@ enum AnnotationType {
 }
 
 impl Visibility {
-    pub fn parse(value: u8) -> Result<Self, ParserErr> {
+    pub fn parse(value: u8) -> Result<Self, DexParserError> {
         match value {
             0x00 => Ok(Visibility::BUILD),
             0x01 => Ok(Visibility::RUNTIME),
             0x02 => Ok(Visibility::SYSTEM),
-            _ => Err(ParserErr::from(format!("Could not find visibility for value 0x{:0X}", value)))
+            _ => Err(DexParserError::from(format!("Could not find visibility for value 0x{:0X}", value)))
         }
     }
 }
 
 impl MapListItemType {
-    fn parse(value: u16) -> Result<Self, ParserErr> {
+    fn parse(value: u16) -> Result<Self, DexParserError> {
         match value {
             0x0000 => Ok(MapListItemType::HEADER_ITEM),
             0x0001 => Ok(MapListItemType::STRING_ID_ITEM),
@@ -334,7 +334,7 @@ impl MapListItemType {
             0x2004 => Ok(MapListItemType::ANNOTATION_ITEM),
             0x2005 => Ok(MapListItemType::ENCODED_ARRAY_ITEM),
             0x2006 => Ok(MapListItemType::ANNOTATIONS_DIRECTORY_ITEM),
-            _ => Err(ParserErr::from(format!("No type code found for map list item 0x{:0X}", value)))
+            _ => Err(DexParserError::from(format!("No type code found for map list item 0x{:0X}", value)))
         }
     }
 }
