@@ -568,7 +568,7 @@ mod tests {
         writer.write_u32::<LittleEndian>(2).unwrap();
         writer.write_u32::<LittleEndian>(2).unwrap();
 
-        let res = parse_map_list(&[], &writer, e).unwrap();
+        let res = parse_map_list(&writer, e).unwrap();
 
         assert_eq!(res.0.len(), 0);
         assert_eq!(res.1, RawMapList {
