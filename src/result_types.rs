@@ -5,8 +5,8 @@ use crate::parser::encoded_value;
 #[derive(Debug, PartialEq)]
 pub struct DexFile {
     pub header: super::Header,
-    pub string_data: Vec<Rc<StringData>>,
-    pub type_identifiers: Vec<Rc<TypeIdentifier>>,
+    pub string_data: Vec<Rc<String>>,
+    pub type_identifiers: Vec<Rc<String>>,
     pub prototypes: Vec<Rc<Prototype>>,
     pub fields: Vec<Rc<Field>>,
     pub methods: Vec<Rc<Method>>,
@@ -17,7 +17,7 @@ pub struct DexFile {
 #[derive(Debug, PartialEq)]
 pub struct CallSiteItem {
     pub method_handle: Rc<Method>,
-    pub method_name: Rc<StringData>,
+    pub method_name: Rc<String>,
     pub method_type: Rc<Prototype>,
     pub constant_values: Option<Vec<encoded_value::EncodedValue>>
 }
@@ -32,57 +32,46 @@ pub struct Header {
 }
 
 #[derive(Debug, PartialEq)]
-pub struct StringData {
-    pub utf16_size: u32,
-    pub data: String
-}
-
-#[derive(Debug, PartialEq)]
-pub struct TypeIdentifier {
-    pub descriptor: Rc<StringData>
-}
-
-#[derive(Debug, PartialEq)]
 pub struct Prototype {
-    pub shorty: Rc<StringData>,
-    pub return_type: Rc<TypeIdentifier>,
-    pub parameters: Option<Vec<Rc<TypeIdentifier>>>
+    pub shorty: Rc<String>,
+    pub return_type: Rc<String>,
+    pub parameters: Option<Vec<Rc<String>>>
 }
 
 #[derive(Debug, PartialEq)]
 pub struct Field {
-    pub definer: Rc<TypeIdentifier>,
-    pub type_: Rc<TypeIdentifier>,
-    pub name: Rc<StringData>
+    pub definer: Rc<String>,
+    pub type_: Rc<String>,
+    pub name: Rc<String>
 }
 
 #[derive(Debug, PartialEq)]
 pub struct Method {
-    pub definer: Rc<TypeIdentifier>,
+    pub definer: Rc<String>,
     pub prototype: Rc<Prototype>,
-    pub name: Rc<StringData>
+    pub name: Rc<String>
 }
 
 #[derive(Debug, PartialEq)]
 pub struct ClassAnnotation {
     pub visibility: Visibility,
-    pub type_: Rc<TypeIdentifier>,
+    pub type_: Rc<String>,
     pub elements: Vec<AnnotationElement>
 }
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct AnnotationElement {
-    pub name: Rc<StringData>,
+    pub name: Rc<String>,
     pub value: encoded_value::EncodedValue
 }
 
 #[derive(Debug, PartialEq)]
 pub struct ClassDefinition {
-    pub class_type: Rc<TypeIdentifier>,
+    pub class_type: Rc<String>,
     pub access_flags: Vec<AccessFlag>,
-    pub superclass: Option<Rc<TypeIdentifier>>,
-    pub interfaces: Option<Vec<Rc<TypeIdentifier>>>,
-    pub source_file_name: Option<Rc<StringData>>,
+    pub superclass: Option<Rc<String>>,
+    pub interfaces: Option<Vec<Rc<String>>>,
+    pub source_file_name: Option<Rc<String>>,
     pub annotations: Option<Annotations>,
     pub class_data: Option<ClassData>,
     pub static_values: Option<encoded_value::EncodedArrayItem>
@@ -138,7 +127,7 @@ pub struct FieldAnnotation {
 #[derive(Debug, PartialEq, Clone)]
 pub struct AnnotationItem {
     pub visibility: Visibility,
-    pub type_: Rc<TypeIdentifier>,
+    pub type_: Rc<String>,
     pub annotations: Vec<AnnotationElement>
 }
 
@@ -184,7 +173,7 @@ pub struct EncodedCatchHandler {
 #[derive(Debug, PartialEq)]
 pub struct EncodedTypeAddrPair {
     // index into type_ids list for the type of exception to catch
-    pub type_: Rc<TypeIdentifier>,
+    pub type_: Rc<String>,
     // bytecode address of associated exception handler
     pub addr: u32
 }

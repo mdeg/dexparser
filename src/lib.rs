@@ -14,3 +14,5 @@ pub use nom::Endianness;
 pub fn parse(buf: &[u8]) -> Result<DexFile, DexParserError> {
     parser::parse(buf)
 }
+
+// TODO (improvement): validate checksum/signature

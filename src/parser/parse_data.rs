@@ -5,10 +5,18 @@ use super::raw_types::*;
 use crate::result_types::*;
 use super::*;
 
-fn transform_string_id_items<'a>(data: &'a[u8], sdi: &[u32], off: usize) -> nom::IResult<&'a[u8], Vec<Rc<StringData>>> {
+fn transform_string_id_items<'a>(data: &'a[u8], sdi: &[u32], off: usize) -> nom::IResult<&'a[u8], Vec<Rc<String>>> {
     let mut v = vec!();
     for offset in sdi {
-        v.push(Rc::new(parse_string_data_item(&data[*offset as usize - off..])?.1));
+        let raw = parse_string_data_item(&data[*offset as usize - off..])?.1;
+
+        // TODO (release): theres a bug with decoding large regex strings here
+        // possibly not handling escape characters well?
+        if raw.data.len() as u32 != raw.utf16_size {
+            // TODO (release): return an error
+        }
+
+        v.push(Rc::new(raw.data));
     }
     Ok((data, v))
 }
@@ -23,8 +31,8 @@ fn transform_header(raw: &RawHeader, e: nom::Endianness) -> Result<Header, DexPa
     })
 }
 
-fn transform_prototype_id_items<'a>(data: &'a[u8], proto_ids: &[RawPrototype], sd: &[Rc<StringData>],
-                                    ti: &[Rc<TypeIdentifier>], off: usize, e: nom::Endianness) -> nom::IResult<&'a[u8], Vec<Rc<Prototype>>> {
+fn transform_prototype_id_items<'a>(data: &'a[u8], proto_ids: &[RawPrototype], sd: &[Rc<String>],
+                                    ti: &[Rc<String>], off: usize, e: nom::Endianness) -> nom::IResult<&'a[u8], Vec<Rc<Prototype>>> {
     let mut v = vec!();
     for item in proto_ids {
         let shorty = sd[item.shorty_idx as usize].clone();
@@ -55,8 +63,7 @@ pub fn transform_dex_file(raw: RawDexFile, e: nom::Endianness) -> Result<DexFile
 
     let sd = transform_string_id_items(&raw.data, &raw.string_id_items, off)?.1;
 
-    let ti = raw.type_id_items.into_iter()
-        .map(|i| Rc::new(TypeIdentifier { descriptor: sd[i as usize].clone() })).collect::<Vec<_>>();
+    let ti = raw.type_id_items.into_iter().map(|i| sd[i as usize].clone()).collect::<Vec<_>>();
 
     let pro = transform_prototype_id_items(&raw.data, &raw.proto_id_items, &sd, &ti, off, header.endianness)?.1;
 
@@ -96,7 +103,7 @@ pub fn transform_dex_file(raw: RawDexFile, e: nom::Endianness) -> Result<DexFile
 }
 
 // TODO: is this raw call site item?
-fn parse_call_site_items(data: &[u8], data_off: usize, csi: &[u32], sd: &[Rc<StringData>],
+fn parse_call_site_items(data: &[u8], data_off: usize, csi: &[u32], sd: &[Rc<String>],
                          methods: &[Rc<Method>], pro: &[Rc<Prototype>]) -> Result<Vec<CallSiteItem>, DexParserError> {
     // TODO (release): test parsing call_site_items
     unimplemented!();
@@ -135,8 +142,8 @@ fn parse_call_site_items(data: &[u8], data_off: usize, csi: &[u32], sd: &[Rc<Str
     Ok(v)
 }
 
-fn transform_annotations<'a>(data: &'a[u8], off: usize, data_off: usize, sd: &[Rc<StringData>],
-                             ti: &[Rc<TypeIdentifier>], fi: &[Rc<Field>], mi: &[Rc<Method>],
+fn transform_annotations<'a>(data: &'a[u8], off: usize, data_off: usize, sd: &[Rc<String>],
+                             ti: &[Rc<String>], fi: &[Rc<Field>], mi: &[Rc<Method>],
                              e: nom::Endianness) -> nom::IResult<&'a[u8], Annotations> {
 
     let adi = parse_annotations_directory_item(&data[off - data_off..], e)?.1;
@@ -189,8 +196,8 @@ fn transform_annotations<'a>(data: &'a[u8], off: usize, data_off: usize, sd: &[R
     }))
 }
 
-fn transform_annotation_item(item: RawAnnotationItem, sd: &[Rc<StringData>],
-                             ti: &[Rc<TypeIdentifier>]) -> Result<AnnotationItem, DexParserError> {
+fn transform_annotation_item(item: RawAnnotationItem, sd: &[Rc<String>],
+                             ti: &[Rc<String>]) -> Result<AnnotationItem, DexParserError> {
     Ok(AnnotationItem {
         visibility: Visibility::parse(item.visibility)?,
         type_: ti[item.annotation.type_idx as usize].clone(),
@@ -203,8 +210,8 @@ fn transform_annotation_item(item: RawAnnotationItem, sd: &[Rc<StringData>],
     })
 }
 
-fn transform_field_annotations<'a>(data: &'a[u8], rfas: Vec<RawFieldAnnotation>, sd: &[Rc<StringData>],
-                                   ti: &[Rc<TypeIdentifier>], fi: &[Rc<Field>],
+fn transform_field_annotations<'a>(data: &'a[u8], rfas: Vec<RawFieldAnnotation>, sd: &[Rc<String>],
+                                   ti: &[Rc<String>], fi: &[Rc<Field>],
                                    data_off: usize, e: nom::Endianness) -> nom::IResult<&'a[u8], Vec<FieldAnnotation>> {
     let mut fa = Vec::with_capacity(rfas.len());
     for rfa in rfas {
@@ -216,8 +223,8 @@ fn transform_field_annotations<'a>(data: &'a[u8], rfas: Vec<RawFieldAnnotation>,
     Ok((data, fa))
 }
 
-fn transform_method_annotations<'a>(data: &'a[u8], rmas: Vec<RawMethodAnnotation>, sd: &[Rc<StringData>],
-                                    ti: &[Rc<TypeIdentifier>],  mi: &[Rc<Method>],
+fn transform_method_annotations<'a>(data: &'a[u8], rmas: Vec<RawMethodAnnotation>, sd: &[Rc<String>],
+                                    ti: &[Rc<String>], mi: &[Rc<Method>],
                                     data_off: usize, e: nom::Endianness) -> nom::IResult<&'a[u8], Vec<MethodAnnotation>> {
     let mut ma = Vec::with_capacity(rmas.len());
     for rma in rmas {
@@ -229,8 +236,8 @@ fn transform_method_annotations<'a>(data: &'a[u8], rmas: Vec<RawMethodAnnotation
     Ok((data, ma))
 }
 
-fn transform_parameter_annotations<'a>(data: &'a[u8], rpas: Vec<RawParameterAnnotation>, sd: &[Rc<StringData>],
-                                       ti: &[Rc<TypeIdentifier>], mi: &[Rc<Method>],
+fn transform_parameter_annotations<'a>(data: &'a[u8], rpas: Vec<RawParameterAnnotation>, sd: &[Rc<String>],
+                                       ti: &[Rc<String>], mi: &[Rc<Method>],
                                        data_off: usize, e: nom::Endianness) -> nom::IResult<&'a[u8], Vec<ParameterAnnotation>> {
     let mut pa = Vec::with_capacity(rpas.len());
     for rpa in rpas {
@@ -248,7 +255,7 @@ fn transform_parameter_annotations<'a>(data: &'a[u8], rpas: Vec<RawParameterAnno
     Ok((data, pa))
 }
 
-fn parse_annotations<'a>(data: &'a[u8], sd: &[Rc<StringData>], ti: &[Rc<TypeIdentifier>],
+fn parse_annotations<'a>(data: &'a[u8], sd: &[Rc<String>], ti: &[Rc<String>],
                          off: usize, data_off: usize, e: nom::Endianness) -> nom::IResult<&'a[u8], Vec<AnnotationItem>> {
     let mut annotations = vec!();
     let asi = parse_annotation_set_item(&data[off - data_off..], e)?.1;
@@ -260,8 +267,8 @@ fn parse_annotations<'a>(data: &'a[u8], sd: &[Rc<StringData>], ti: &[Rc<TypeIden
     Ok((data, annotations))
 }
 
-fn transform_class_defs<'a>(data: &'a[u8], data_off: usize, cdis: &[RawClassDefinition], ti: &[Rc<TypeIdentifier>],
-                            sd: &[Rc<StringData>], fi: &[Rc<Field>], mtd: &[Rc<Method>],
+fn transform_class_defs<'a>(data: &'a[u8], data_off: usize, cdis: &[RawClassDefinition], ti: &[Rc<String>],
+                            sd: &[Rc<String>], fi: &[Rc<Field>], mtd: &[Rc<Method>],
                             e: nom::Endianness) -> nom::IResult<&'a[u8], Vec<ClassDefinition>> {
 
     let mut v = Vec::with_capacity(cdis.len());
@@ -344,7 +351,7 @@ fn transform_encoded_fields(raw: &[RawEncodedField], fi: &[Rc<Field>]) -> Vec<En
 }
 
 fn transform_code_item<'a>(data: &'a[u8], data_off: usize, handler_off: usize, raw: RawCodeItem,
-                           ti: &[Rc<TypeIdentifier>], e: nom::Endianness) -> nom::IResult<&'a[u8], Code> {
+                           ti: &[Rc<String>], e: nom::Endianness) -> nom::IResult<&'a[u8], Code> {
 
     let debug_info = if raw.debug_info_off == 0 {
         None
@@ -402,7 +409,7 @@ fn transform_code_item<'a>(data: &'a[u8], data_off: usize, handler_off: usize, r
 }
 
 fn transform_encoded_methods<'a>(data: &'a[u8], data_off: usize, raw: &[RawEncodedMethod],
-                                 mtd: &[Rc<Method>], ti: &[Rc<TypeIdentifier>],
+                                 mtd: &[Rc<Method>], ti: &[Rc<String>],
                                  e: nom::Endianness) -> nom::IResult<&'a[u8], Vec<EncodedMethod>> {
     let mut methods = vec!();
     let mut prev_offset = 0;
@@ -434,7 +441,7 @@ fn transform_encoded_methods<'a>(data: &'a[u8], data_off: usize, raw: &[RawEncod
     Ok((data, methods))
 }
 
-fn transform_encoded_catch_handler(raw: RawEncodedCatchHandler, ti: &[Rc<TypeIdentifier>]) -> EncodedCatchHandler{
+fn transform_encoded_catch_handler(raw: RawEncodedCatchHandler, ti: &[Rc<String>]) -> EncodedCatchHandler{
     EncodedCatchHandler {
         handlers: raw.handlers.into_iter()
             .map(|raw| {
@@ -518,13 +525,13 @@ named!(parse_encoded_type_addr_pair<&[u8], RawEncodedTypeAddrPair>,
 );
 
 // Docs: string_data
-named!(parse_string_data_item<&[u8], StringData>,
+named!(parse_string_data_item<&[u8], RawStringData>,
     peek!(
         do_parse!(
             utf16_size: call!(parse_uleb128)                    >>
             data: map!(map!(take_until_and_consume!("\0"), mutf8::MString::from_mutf8),
                 mutf8::MString::into_string) >>
-            (StringData { utf16_size, data })
+            (RawStringData { utf16_size, data })
     ))
 );
 
@@ -905,8 +912,8 @@ mod tests {
         let mut data = vec!();
         append_annotation_set_item_data(&mut data);
 
-        let sd = vec!(generate_string_data("Something".to_string()),
-                      generate_string_data("SomethingElse".to_string()));
+        let sd = vec!(Rc::new("Something".to_string()),
+                      Rc::new("SomethingElse".to_string()));
         let ti = generate_type_identifiers(2);
 
         let res = parse_annotations(&data, &sd, &ti, 0, DATA_OFFSET, e).unwrap();
@@ -945,8 +952,8 @@ mod tests {
             }
         );
         let fi = generate_field_identifiers(2);
-        let sd = vec!(generate_string_data("Something".to_string()),
-                      generate_string_data("SomethingElse".to_string()));
+        let sd = vec!(Rc::new("Something".to_string()),
+                      Rc::new("SomethingElse".to_string()));
         let ti = generate_type_identifiers(2);
 
         let res = transform_field_annotations(&data, rfas, &sd, &ti, &fi, DATA_OFFSET, e).unwrap();
@@ -982,24 +989,12 @@ mod tests {
 
     // ==== helpers ====
 
-    // helper function to generate a valid StringData item
-    fn generate_string_data(data: String) -> Rc<StringData> {
-        Rc::new(StringData {
-            utf16_size: data.encode_utf16().count() as u32,
-            data
-        })
-    }
-
     // helper function to generate a field
     fn generate_field(data: String) -> Field {
-        let data = generate_string_data(data);
+        let data = Rc::new(data);
         Field {
-            definer: Rc::new(TypeIdentifier {
-                descriptor: data.clone()
-            }),
-            type_: Rc::new(TypeIdentifier {
-                descriptor: data.clone()
-            }),
+            definer: data.clone(),
+            type_: data.clone(),
             name: data.clone()
         }
     }
@@ -1014,12 +1009,10 @@ mod tests {
     }
 
     // helper function to generate a list of type identifiers
-    fn generate_type_identifiers(size: i32) -> Vec<Rc<TypeIdentifier>> {
+    fn generate_type_identifiers(size: i32) -> Vec<Rc<String>> {
         let mut v = vec!();
         for _ in 0..size {
-            v.push(Rc::new(TypeIdentifier {
-                descriptor: generate_string_data("SomeType".to_string())
-            }))
+            v.push(Rc::new("SomeType".to_string()))
         }
         v
     }

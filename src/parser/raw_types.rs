@@ -190,6 +190,13 @@ pub struct RawMethod {
     pub name_idx: u32
 }
 
+// Docs: string_data_item
+#[derive(Debug, PartialEq)]
+pub struct RawStringData {
+    pub utf16_size: u32,
+    pub data: String
+}
+
 // Docs: class_def_item
 #[derive(Debug, PartialEq)]
 pub struct RawClassDefinition {
