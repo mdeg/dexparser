@@ -64,27 +64,28 @@ fn parse_dex_file(input: &[u8], e: nom::Endianness) -> nom::IResult<&[u8], RawDe
     let method_id_items = parse_method_id_items(&input[header.method_ids_off as usize ..],
                                                 header.method_ids_size as usize, e)?.1;
 
-    // store the remainder left after parsing here
-    let (remainder, class_def_items) = parse_class_def_items(&input[header.class_defs_off as usize ..], header.class_defs_size as usize, e)?;
+    // store the remainder left after parsing here - need to start from here for further parsing
+    let (mut remainder, class_def_items) = parse_class_def_items(&input[header.class_defs_off as usize ..], header.class_defs_size as usize, e)?;
 
     // Version 038 adds some new index pools with sizes not indicated in the header
     // For this version and higher, we'll need to peek at the map list to know their size for parsing
     // TODO (release): verify this! Maybe it should just output the map list in a traversable format?
-    let (call_site_idxs, method_handle_idxs) = if header.version >= 38 {
+    let (mut call_site_idxs, mut method_handle_idxs) = (None, None);
+    if header.version >= 38 {
         let map_list = call!(&input[header.map_off as usize ..], parse_map_list, e)?.1.list;
 
-        let csi_count = map_list.iter()
-            .filter(|item| item.type_ == MapListItemType::CALL_SITE_ID_ITEM).count();
-        let mhi_count = map_list.iter()
-            .filter(|item| item.type_ == MapListItemType::METHOD_HANDLE_ITEM).count();
+        let csi_count = map_list.iter().filter(|item| item.type_ == MapListItemType::CALL_SITE_ID_ITEM).count();
+        if csi_count > 0 {
+            let res = call!(&remainder, parse_u32_list, csi_count, e)?;
+            remainder = res.0;
+            call_site_idxs = Some(res.1);
+        }
 
-        let (remainder, call_site_idxs) = call!(&remainder, parse_u32_list, csi_count, e)?;
-        let method_handle_idxs = call!(&remainder, parse_method_handle_items, mhi_count, e)?.1;
-
-        (Some(call_site_idxs), Some(method_handle_idxs))
-    } else {
-        (None, None)
-    };
+        let mhi_count = map_list.iter().filter(|item| item.type_ == MapListItemType::METHOD_HANDLE_ITEM).count();
+        if mhi_count > 0 {
+            method_handle_idxs = Some(call!(&remainder, parse_method_handle_items, mhi_count, e)?.1);
+        }
+    }
 
     // anything left after data is just link data
     let (ld, data) = map!(&input[header.data_off as usize ..], take!(header.data_size), |d| { d.to_vec() })?;
