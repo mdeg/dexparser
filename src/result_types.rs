@@ -1,4 +1,4 @@
-use std::{fmt, rc::Rc};
+use std::rc::Rc;
 // TODO (improvement): encoded_value shouldn't need to be pub
 use crate::parser::encoded_value;
 
@@ -14,38 +14,12 @@ pub struct DexFile {
     pub call_site_items: Option<Vec<CallSiteItem>>
 }
 
-impl fmt::Display for DexFile {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Header: \t{}\nStrings: {}\nType Identifiers: {}\nPrototypes: {}\nFields: {}\n
-            Methods: {}\nClass Definitions: {}\nCall Site Items: {}\n",
-            &self.header,
-            &self.string_data.iter().map(|x| x.data.clone()).collect::<Vec<String>>().join(", "),
-            &self.type_identifiers.iter().map(|x| (*x.descriptor).data.clone()).collect::<Vec<String>>().join(", "),
-            &self.prototypes.iter().map(|x| format!("{}", x)).collect::<String>(),
-            &self.fields.iter().map(|x| format!("{}", x)).collect::<String>(),
-            &self.methods.iter().map(|x| format!("{}", x)).collect::<String>(),
-            &self.class_def_items.iter().map(|x| format!("{}\n", x)).collect::<String>(),
-            match &self.call_site_items {
-                None => "".to_string(),
-                Some(x) => x.iter().map(|x| format!("{}", x)).collect::<String>()
-            }
-        )
-    }
-}
-
 #[derive(Debug, PartialEq)]
 pub struct CallSiteItem {
     pub method_handle: Rc<Method>,
     pub method_name: Rc<StringData>,
     pub method_type: Rc<Prototype>,
     pub constant_values: Option<Vec<encoded_value::EncodedValue>>
-}
-
-impl fmt::Display for CallSiteItem {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        // TODO (release)
-        write!(f, "TODO")
-    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -57,43 +31,15 @@ pub struct Header {
     pub endianness: nom::Endianness
 }
 
-impl fmt::Display for Header {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        // TODO (release): some nice formatting for checksum
-        write!(f, "version: {}\nchecksum: {}\nsignature: {:?}\nfile size (bytes): {}\nendianness: {}",
-            self.version,
-            self.checksum,
-            self.signature,
-            self.file_size,
-            match self.endianness {
-                nom::Endianness::Big => "big-endian",
-                nom::Endianness::Little => "little-endian"
-            }
-        )
-    }
-}
-
 #[derive(Debug, PartialEq)]
 pub struct StringData {
     pub utf16_size: u32,
     pub data: String
 }
 
-impl fmt::Display for StringData {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}\n", self.data)
-    }
-}
-
 #[derive(Debug, PartialEq)]
 pub struct TypeIdentifier {
     pub descriptor: Rc<StringData>
-}
-
-impl fmt::Display for TypeIdentifier {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}\n", self.descriptor)
-    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -103,30 +49,11 @@ pub struct Prototype {
     pub parameters: Option<Vec<Rc<TypeIdentifier>>>
 }
 
-impl fmt::Display for Prototype {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "shorty: {}\nreturn type: {}\nparameters: {}\n",
-            &self.shorty,
-            &self.return_type,
-            match &self.parameters {
-                None => "-".to_string(),
-                Some(i) => i.iter().map(ToString::to_string).collect::<Vec<String>>().join(", ")
-            }
-        )
-    }
-}
-
 #[derive(Debug, PartialEq)]
 pub struct Field {
     pub definer: Rc<TypeIdentifier>,
     pub type_: Rc<TypeIdentifier>,
     pub name: Rc<StringData>
-}
-
-impl fmt::Display for Field {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "definer: {}\ntype: {}\nname: {}\n", self.definer, self.type_, self.name)
-    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -136,12 +63,6 @@ pub struct Method {
     pub name: Rc<StringData>
 }
 
-impl fmt::Display for Method {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "definer: {}\nprototype: {}\nname: {}\n", self.definer, self.prototype, self.name)
-    }
-}
-
 #[derive(Debug, PartialEq)]
 pub struct ClassAnnotation {
     pub visibility: Visibility,
@@ -149,26 +70,10 @@ pub struct ClassAnnotation {
     pub elements: Vec<AnnotationElement>
 }
 
-impl fmt::Display for ClassAnnotation {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "visibility: {}\ntype: {}\nelements: {}",
-            &self.visibility,
-            &self.type_,
-            &self.elements.iter().map(ToString::to_string).collect::<Vec<String>>().join(", ")
-        )
-    }
-}
-
 #[derive(Debug, PartialEq, Clone)]
 pub struct AnnotationElement {
     pub name: Rc<StringData>,
     pub value: encoded_value::EncodedValue
-}
-
-impl fmt::Display for AnnotationElement {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "name: {}\tvalue: {}", self.name, self.value)
-    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -183,51 +88,12 @@ pub struct ClassDefinition {
     pub static_values: Option<encoded_value::EncodedArrayItem>
 }
 
-impl fmt::Display for ClassDefinition {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "class type: {}\naccess flags: {}\nsuperclass: {}\ninterfaces: {}\nsource file name: {}\nannotations: {}\n",
-           *self.class_type,
-            self.access_flags.iter()
-               .map(ToString::to_string)
-               .collect::<Vec<String>>()
-               .join(", "),
-            match &self.superclass {
-                None => "-".to_string(),
-                Some(i) => i.to_string()
-            },
-            match &self.interfaces {
-                None => "-".to_string(),
-                Some(i) => i.iter().map(ToString::to_string).collect::<Vec<String>>().join(", ")
-            },
-            match &self.source_file_name {
-                None => "-".to_string(),
-                Some(i) => format!("{}", i)
-            },
-            match &self.annotations {
-                None => "-".to_string(),
-                Some(i) => format!("{}\n", i)
-            }
-        )
-    }
-}
-
 #[derive(Debug, PartialEq)]
 pub struct Annotations {
     pub class_annotations: Option<Vec<ClassAnnotation>>,
     pub field_annotations: Option<Vec<FieldAnnotation>>,
     pub method_annotations: Option<Vec<MethodAnnotation>>,
     pub parameter_annotations: Option<Vec<ParameterAnnotation>>
-}
-
-impl fmt::Display for Annotations {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-            write!(f, "class annotations: {}\n",
-            match &self.class_annotations {
-                None => "-".to_string(),
-                Some(i) => i.iter().map(ToString::to_string).collect::<Vec<String>>().join(", ")
-            }
-        )
-    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -269,14 +135,6 @@ pub struct FieldAnnotation {
     pub annotations: Vec<AnnotationItem>
 }
 
-impl fmt::Display for FieldAnnotation {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Field Data:{}\nAnnotations: {}",
-               self.field_data,
-               self.annotations.iter().fold(String::new(), |x, y| { format!("{}\n{}", x, y)}))
-    }
-}
-
 #[derive(Debug, PartialEq, Clone)]
 pub struct AnnotationItem {
     pub visibility: Visibility,
@@ -284,31 +142,11 @@ pub struct AnnotationItem {
     pub annotations: Vec<AnnotationElement>
 }
 
-impl fmt::Display for AnnotationItem {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let mut annots = String::new();
-        for a in &self.annotations {
-            annots = format!("{}\n{}", annots, a);
-        }
-        write!(f, "Visibility: {}\nType: {}\nAnnotations: {}", self.visibility, self.type_, annots)
-    }
-}
-
 #[derive(Debug, PartialEq, Clone)]
 pub enum Visibility {
     BUILD,
     RUNTIME,
     SYSTEM
-}
-
-impl fmt::Display for Visibility {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Visibility::BUILD => write!(f, "build"),
-            Visibility::RUNTIME => write!(f, "runtime"),
-            Visibility::SYSTEM => write!(f, "system")
-        }
-    }
 }
 
 // Docs: code_item

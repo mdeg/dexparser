@@ -8,7 +8,6 @@ use crate::error::*;
 
 use self::raw_types::*;
 use nom::*;
-use std::fmt;
 
 // The magic that starts a DEX file
 const DEX_FILE_MAGIC: [u8; 4] = [0x64, 0x65, 0x78, 0x0A];
@@ -376,12 +375,6 @@ impl AccessFlag {
         if value & 0x20000 != 0 { v.push(AccessFlag::ACC_DECLARED_SYNCHRONIZED); }
 
         v
-    }
-}
-
-impl fmt::Display for AccessFlag {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{:?}", self)
     }
 }
 

@@ -3,7 +3,6 @@ use crate::error::*;
 use super::parse_data::parse_annotation_element_item;
 use super::raw_types::*;
 use byteorder::ByteOrder;
-use std::fmt;
 
 // note that this does NOT peek! that's the responsibility of the calling parser
 named!(pub parse_encoded_value_item<&[u8], EncodedValue>,
@@ -103,43 +102,6 @@ pub enum EncodedValue {
     Boolean(bool)
 }
 
-impl fmt::Display for EncodedValue {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            EncodedValue::Byte(ref i) => write!(f, "{}", i),
-            EncodedValue::Short(ref i) => write!(f, "{}", i),
-            EncodedValue::Char(ref i) => write!(f, "{}", i),
-            EncodedValue::Int(ref i) => write!(f, "{}", i),
-            EncodedValue::Long(ref i) => write!(f, "{}", i),
-            EncodedValue::Float(ref i) => write!(f, "{}", i),
-            EncodedValue::Double(ref i) => write!(f, "{}", i),
-            EncodedValue::MethodType(ref i) => write!(f, "{}", i),
-            EncodedValue::MethodHandle(ref i) => write!(f, "{}", i),
-            EncodedValue::String(ref i) => write!(f, "{}", i),
-            EncodedValue::Type(ref i) => write!(f, "{}", i),
-            EncodedValue::Field(ref i) => write!(f, "{}", i),
-            EncodedValue::Method(ref i) => write!(f, "{}", i),
-            EncodedValue::Enum(ref i) => write!(f, "{}", i),
-            EncodedValue::Array(ref i) => write!(f, "{}", i),
-            // indicates coding error - raw values should never reach output
-            // TODO (release): should this panic?
-            EncodedValue::Annotation(_) => write!(f, "TODO"),
-//            EncodedValue::Annotation(_) => panic!("attempted to display raw annotation value"),
-            EncodedValue::Null => write!(f, "null"),
-            EncodedValue::Boolean(ref i) => write!(f, "{}", i)
-        }
-    }
-}
-
-impl ::std::fmt::Display for EncodedArrayItem {
-    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
-        write!(f, "[{}]", &self.values.iter()
-            .map(ToString::to_string)
-            .collect::<Vec<String>>()
-            .join(", "))
-    }
-}
-
 #[derive(Debug, PartialEq, Clone)]
 pub struct EncodedArrayItem {
     pub size: Uleb128,
@@ -193,7 +155,6 @@ impl EncodedValueType {
         }
     }
 }
-
 
 #[cfg(test)]
 mod tests {
