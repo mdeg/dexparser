@@ -5,13 +5,18 @@ use crate::parser::encoded_value;
 #[derive(Debug, PartialEq)]
 pub struct DexFile {
     pub header: super::Header,
+    pub file_data: DexFileData,
+    pub classes: Vec<ClassDefinition>,
+    pub call_site_items: Option<Vec<CallSiteItem>>
+}
+
+#[derive(Debug, PartialEq)]
+pub struct DexFileData {
     pub string_data: Vec<Rc<String>>,
     pub type_identifiers: Vec<Rc<String>>,
     pub prototypes: Vec<Rc<Prototype>>,
     pub fields: Vec<Rc<Field>>,
     pub methods: Vec<Rc<Method>>,
-    pub class_def_items: Vec<ClassDefinition>,
-    pub call_site_items: Option<Vec<CallSiteItem>>
 }
 
 #[derive(Debug, PartialEq)]

@@ -61,50 +61,52 @@ pub fn transform_dex_file(raw: RawDexFile, e: nom::Endianness) -> Result<DexFile
 
     let header = transform_header(&raw.header, e)?;
 
-    let sd = transform_string_id_items(&raw.data, &raw.string_id_items, off)?.1;
+    let file_data = {
+        let sd = transform_string_id_items(&raw.data, &raw.string_id_items, off)?.1;
+        let ti = raw.type_id_items.into_iter().map(|i| sd[i as usize].clone()).collect::<Vec<_>>();
+        let pro = transform_prototype_id_items(&raw.data, &raw.proto_id_items, &sd, &ti, off, header.endianness)?.1;
 
-    let ti = raw.type_id_items.into_iter().map(|i| sd[i as usize].clone()).collect::<Vec<_>>();
+        let fields = raw.field_id_items.into_iter()
+            .map(|i| Rc::new(Field {
+                definer: ti[i.class_idx as usize].clone(),
+                type_: ti[i.type_idx as usize].clone(),
+                name: sd[i.name_idx as usize].clone()
+            })).collect::<Vec<_>>();
 
-    let pro = transform_prototype_id_items(&raw.data, &raw.proto_id_items, &sd, &ti, off, header.endianness)?.1;
+        let methods = raw.method_id_items.into_iter()
+            .map(|i| Rc::new(Method {
+                definer: ti[i.class_idx as usize].clone(),
+                prototype: pro[i.proto_idx as usize].clone(),
+                name: sd[i.name_idx as usize].clone()
+            })).collect::<Vec<_>>();
 
-    let fields = raw.field_id_items.into_iter()
-        .map(|i| Rc::new(Field {
-            definer: ti[i.class_idx as usize].clone(),
-            type_: ti[i.type_idx as usize].clone(),
-            name: sd[i.name_idx as usize].clone()
-        })).collect::<Vec<_>>();
+        DexFileData {
+            string_data: sd,
+            type_identifiers: ti,
+            prototypes: pro,
+            fields,
+            methods
+        }
+    };
 
-    let methods = raw.method_id_items.into_iter()
-        .map(|i| Rc::new(Method {
-            definer: ti[i.class_idx as usize].clone(),
-            prototype: pro[i.proto_idx as usize].clone(),
-            name: sd[i.name_idx as usize].clone()
-        })).collect::<Vec<_>>();
-
-    let class_def_items = transform_class_defs(&raw.data, off, &raw.class_def_items, &ti, &sd,
-                                               &fields, &methods, header.endianness)?.1;
+    let classes = transform_class_defs(&raw.data, off, &raw.class_def_items, &file_data, header.endianness)?.1;
 
     let call_site_items = if let Some(csi) = raw.call_site_idxs {
-        Some(parse_call_site_items(&raw.data, off, &csi, &sd, &methods, &pro)?)
+        Some(parse_call_site_items(&raw.data, off, &csi, &file_data)?)
     } else {
         None
     };
 
     Ok(DexFile {
         header,
-        string_data: sd,
-        type_identifiers: ti,
-        prototypes: pro,
-        fields,
-        methods,
-        class_def_items,
+        file_data,
+        classes,
         call_site_items
     })
 }
 
 // TODO: is this raw call site item?
-fn parse_call_site_items(data: &[u8], data_off: usize, csi: &[u32], sd: &[Rc<String>],
-                         methods: &[Rc<Method>], pro: &[Rc<Prototype>]) -> Result<Vec<CallSiteItem>, DexParserError> {
+fn parse_call_site_items(data: &[u8], data_off: usize, csi: &[u32], fd: &DexFileData) -> Result<Vec<CallSiteItem>, DexParserError> {
     // TODO (release): test parsing call_site_items
     unimplemented!();
 
@@ -114,19 +116,19 @@ fn parse_call_site_items(data: &[u8], data_off: usize, csi: &[u32], sd: &[Rc<Str
         let array = encoded_value::parse_encoded_array_item(&data[*idx as usize - data_off ..])?.1;
 
         let method_handle = if encoded_value::EncodedValue::MethodHandle(*idx) == array.values[0] {
-            methods[*idx as usize].clone()
+            fd.methods[*idx as usize].clone()
         } else {
             return Err(DexParserError::from("call site item could not be parsed: bootstrap linker method handle malformed"));
         };
 
         let method_name = if encoded_value::EncodedValue::String(*idx) == array.values[1] {
-            sd[*idx as usize].clone()
+            fd.string_data[*idx as usize].clone()
         } else {
             return Err(DexParserError::from("call site item could not be parsed: bootstrap linker method name malformed"));
         };
 
         let method_type = if encoded_value::EncodedValue::MethodType(*idx) == array.values[2] {
-            pro[*idx as usize].clone()
+            fd.prototypes[*idx as usize].clone()
         } else {
             return Err(DexParserError::from("call site item could not be parsed: bootstrap linker method type malformed"));
         };
@@ -142,8 +144,7 @@ fn parse_call_site_items(data: &[u8], data_off: usize, csi: &[u32], sd: &[Rc<Str
     Ok(v)
 }
 
-fn transform_annotations<'a>(data: &'a[u8], off: usize, data_off: usize, sd: &[Rc<String>],
-                             ti: &[Rc<String>], fi: &[Rc<Field>], mi: &[Rc<Method>],
+fn transform_annotations<'a>(data: &'a[u8], off: usize, data_off: usize, fd: &DexFileData,
                              e: nom::Endianness) -> nom::IResult<&'a[u8], Annotations> {
 
     let adi = parse_annotations_directory_item(&data[off - data_off..], e)?.1;
@@ -158,7 +159,7 @@ fn transform_annotations<'a>(data: &'a[u8], off: usize, data_off: usize, sd: &[R
         for annotation_offset in set_item.entries {
             // Every annotation item contains a visibility, a type and an annotation
             let rai = parse_annotation_item(&data[annotation_offset as usize - data_off..])?.1;
-            let annotation_item = transform_annotation_item(rai, &sd, &ti)?;
+            let annotation_item = transform_annotation_item(rai, &fd)?;
 
             class_annotations.push(ClassAnnotation {
                 visibility: annotation_item.visibility,
@@ -171,19 +172,19 @@ fn transform_annotations<'a>(data: &'a[u8], off: usize, data_off: usize, sd: &[R
     };
 
     let field_annotations = if let Some(rfas) = adi.fld_annot {
-        Some(transform_field_annotations(data, rfas, &sd, &ti, &fi, data_off, e)?.1)
+        Some(transform_field_annotations(data, rfas, &fd, data_off, e)?.1)
     } else {
         None
     };
 
     let method_annotations = if let Some(rmas) = adi.mtd_annot {
-        Some(transform_method_annotations(data, rmas, &sd, &ti, &mi, data_off, e)?.1)
+        Some(transform_method_annotations(data, rmas, &fd, data_off, e)?.1)
     } else {
         None
     };
 
     let parameter_annotations = if let Some(rpas) = adi.prm_annot {
-        Some(transform_parameter_annotations(data, rpas, &sd, &ti, &mi, data_off, e)?.1)
+        Some(transform_parameter_annotations(data, rpas, &fd, data_off, e)?.1)
     } else {
         None
     };
@@ -196,48 +197,44 @@ fn transform_annotations<'a>(data: &'a[u8], off: usize, data_off: usize, sd: &[R
     }))
 }
 
-fn transform_annotation_item(item: RawAnnotationItem, sd: &[Rc<String>],
-                             ti: &[Rc<String>]) -> Result<AnnotationItem, DexParserError> {
+fn transform_annotation_item(item: RawAnnotationItem, fd: &DexFileData) -> Result<AnnotationItem, DexParserError> {
     Ok(AnnotationItem {
         visibility: Visibility::parse(item.visibility)?,
-        type_: ti[item.annotation.type_idx as usize].clone(),
+        type_: fd.type_identifiers[item.annotation.type_idx as usize].clone(),
         annotations: item.annotation.elements.into_iter().map(|raw| {
             AnnotationElement {
-                name: sd[raw.name_idx as usize].clone(),
+                name: fd.string_data[raw.name_idx as usize].clone(),
                 value: raw.value
             }
         }).collect()
     })
 }
 
-fn transform_field_annotations<'a>(data: &'a[u8], rfas: Vec<RawFieldAnnotation>, sd: &[Rc<String>],
-                                   ti: &[Rc<String>], fi: &[Rc<Field>],
+fn transform_field_annotations<'a>(data: &'a[u8], rfas: Vec<RawFieldAnnotation>, fd: &DexFileData,
                                    data_off: usize, e: nom::Endianness) -> nom::IResult<&'a[u8], Vec<FieldAnnotation>> {
     let mut fa = Vec::with_capacity(rfas.len());
     for rfa in rfas {
         fa.push(FieldAnnotation {
-            field_data: fi[rfa.field_idx as usize].clone(),
-            annotations: parse_annotations(&data, &sd, &ti, rfa.annotations_offset as usize, data_off, e)?.1
+            field_data: fd.fields[rfa.field_idx as usize].clone(),
+            annotations: parse_annotations(&data, &fd, rfa.annotations_offset as usize, data_off, e)?.1
         })
     }
     Ok((data, fa))
 }
 
-fn transform_method_annotations<'a>(data: &'a[u8], rmas: Vec<RawMethodAnnotation>, sd: &[Rc<String>],
-                                    ti: &[Rc<String>], mi: &[Rc<Method>],
+fn transform_method_annotations<'a>(data: &'a[u8], rmas: Vec<RawMethodAnnotation>, fd: &DexFileData,
                                     data_off: usize, e: nom::Endianness) -> nom::IResult<&'a[u8], Vec<MethodAnnotation>> {
     let mut ma = Vec::with_capacity(rmas.len());
     for rma in rmas {
         ma.push(MethodAnnotation {
-            method: mi[rma.method_idx as usize].clone(),
-            annotations: parse_annotations(&data, &sd, &ti, rma.annotations_offset as usize, data_off, e)?.1
+            method: fd.methods[rma.method_idx as usize].clone(),
+            annotations: parse_annotations(&data, &fd, rma.annotations_offset as usize, data_off, e)?.1
         })
     }
     Ok((data, ma))
 }
 
-fn transform_parameter_annotations<'a>(data: &'a[u8], rpas: Vec<RawParameterAnnotation>, sd: &[Rc<String>],
-                                       ti: &[Rc<String>], mi: &[Rc<Method>],
+fn transform_parameter_annotations<'a>(data: &'a[u8], rpas: Vec<RawParameterAnnotation>, fd: &DexFileData,
                                        data_off: usize, e: nom::Endianness) -> nom::IResult<&'a[u8], Vec<ParameterAnnotation>> {
     let mut pa = Vec::with_capacity(rpas.len());
     for rpa in rpas {
@@ -246,8 +243,8 @@ fn transform_parameter_annotations<'a>(data: &'a[u8], rpas: Vec<RawParameterAnno
         for annot_set_offset in asrl.entries {
             if annot_set_offset != 0 {
                 pa.push(ParameterAnnotation {
-                    method: mi[rpa.method_idx as usize].clone(),
-                    annotations: parse_annotations(&data, &sd, &ti, annot_set_offset as usize, data_off, e)?.1
+                    method: fd.methods[rpa.method_idx as usize].clone(),
+                    annotations: parse_annotations(&data, &fd, annot_set_offset as usize, data_off, e)?.1
                 })
             }
         }
@@ -255,33 +252,32 @@ fn transform_parameter_annotations<'a>(data: &'a[u8], rpas: Vec<RawParameterAnno
     Ok((data, pa))
 }
 
-fn parse_annotations<'a>(data: &'a[u8], sd: &[Rc<String>], ti: &[Rc<String>],
-                         off: usize, data_off: usize, e: nom::Endianness) -> nom::IResult<&'a[u8], Vec<AnnotationItem>> {
+fn parse_annotations<'a>(data: &'a[u8], fd: &DexFileData, off: usize, data_off: usize,
+                         e: nom::Endianness) -> nom::IResult<&'a[u8], Vec<AnnotationItem>> {
     let mut annotations = vec!();
     let asi = parse_annotation_set_item(&data[off - data_off..], e)?.1;
     for annot_offset in asi.entries {
         let rai = parse_annotation_item(&data[annot_offset as usize - data_off..])?.1;
-        annotations.push(transform_annotation_item(rai, &sd, &ti)?);
+        annotations.push(transform_annotation_item(rai, &fd)?);
     }
 
     Ok((data, annotations))
 }
 
-fn transform_class_defs<'a>(data: &'a[u8], data_off: usize, cdis: &[RawClassDefinition], ti: &[Rc<String>],
-                            sd: &[Rc<String>], fi: &[Rc<Field>], mtd: &[Rc<Method>],
-                            e: nom::Endianness) -> nom::IResult<&'a[u8], Vec<ClassDefinition>> {
+fn transform_class_defs<'a>(data: &'a[u8], data_off: usize, cdis: &[RawClassDefinition],
+                            fd: &DexFileData, e: nom::Endianness) -> nom::IResult<&'a[u8], Vec<ClassDefinition>> {
 
     let mut v = Vec::with_capacity(cdis.len());
 
     for cdi in cdis {
-        let class_type = ti[cdi.class_idx as usize].clone();
+        let class_type = fd.type_identifiers[cdi.class_idx as usize].clone();
 
         let access_flags = AccessFlag::parse(cdi.access_flags, AnnotationType::Class);
 
         let superclass = if cdi.superclass_idx == NO_INDEX {
             None
         } else {
-            Some(ti[cdi.superclass_idx as usize].clone())
+            Some(fd.type_identifiers[cdi.superclass_idx as usize].clone())
         };
 
         let interfaces = if cdi.interfaces_off == 0 {
@@ -290,20 +286,20 @@ fn transform_class_defs<'a>(data: &'a[u8], data_off: usize, cdis: &[RawClassDefi
             Some(parse_type_list(&data[cdi.interfaces_off as usize - data_off..], e)?.1
                 .list
                 .into_iter()
-                .map(|idx| ti[idx as usize].clone())
+                .map(|idx| fd.type_identifiers[idx as usize].clone())
                 .collect())
         };
 
         let annotations = if cdi.annotations_off == 0 {
             None
         } else {
-            Some(transform_annotations(&data, cdi.annotations_off as usize, data_off, &sd, &ti, &fi, &mtd, e)?.1)
+            Some(transform_annotations(&data, cdi.annotations_off as usize, data_off, &fd, e)?.1)
         };
 
         let source_file_name = if cdi.source_file_idx == NO_INDEX {
             None
         } else {
-            Some(sd[cdi.source_file_idx as usize].clone())
+            Some(fd.string_data[cdi.source_file_idx as usize].clone())
         };
 
         let class_data = if cdi.class_data_off == 0 {
@@ -311,10 +307,10 @@ fn transform_class_defs<'a>(data: &'a[u8], data_off: usize, cdis: &[RawClassDefi
         } else {
             let class_data = parse_class_data_item(&data[cdi.class_data_off as usize - data_off..])?.1;
 
-            let static_fields = transform_encoded_fields(&class_data.static_fields, &fi);
-            let instance_fields = transform_encoded_fields(&class_data.instance_fields, &fi);
-            let direct_methods = transform_encoded_methods(&data, data_off, &class_data.direct_methods, &mtd, &ti, e)?.1;
-            let virtual_methods = transform_encoded_methods(&data, data_off, &class_data.virtual_methods, &mtd, &ti, e)?.1;
+            let static_fields = transform_encoded_fields(&class_data.static_fields, &fd);
+            let instance_fields = transform_encoded_fields(&class_data.instance_fields, &fd);
+            let direct_methods = transform_encoded_methods(&data, data_off, &class_data.direct_methods, &fd, e)?.1;
+            let virtual_methods = transform_encoded_methods(&data, data_off, &class_data.virtual_methods, &fd, e)?.1;
 
             Some(ClassData { static_fields, instance_fields, direct_methods, virtual_methods })
         };
@@ -335,14 +331,14 @@ fn transform_class_defs<'a>(data: &'a[u8], data_off: usize, cdis: &[RawClassDefi
 
 // Encoded fields are stored sequentially, with each index in the raw encoded field being the *diff*
 // of the index (not the total index) from the previous entry
-fn transform_encoded_fields(raw: &[RawEncodedField], fi: &[Rc<Field>]) -> Vec<EncodedField> {
+fn transform_encoded_fields(raw: &[RawEncodedField], fd: &DexFileData) -> Vec<EncodedField> {
     let mut fields = vec!();
     // The first entry effectively has an offset of 0
     let mut prev_offset = 0;
     // Subsequent entry indexes are offsets of the previous entry index
     for field in raw {
         fields.push(EncodedField {
-            field: fi[(prev_offset + field.field_idx_diff) as usize].clone(),
+            field: fd.fields[(prev_offset + field.field_idx_diff) as usize].clone(),
             access_flags: AccessFlag::parse(field.access_flags as u32, AnnotationType::Field)
         });
         prev_offset = field.field_idx_diff;
@@ -351,7 +347,7 @@ fn transform_encoded_fields(raw: &[RawEncodedField], fi: &[Rc<Field>]) -> Vec<En
 }
 
 fn transform_code_item<'a>(data: &'a[u8], data_off: usize, handler_off: usize, raw: RawCodeItem,
-                           ti: &[Rc<String>], e: nom::Endianness) -> nom::IResult<&'a[u8], Code> {
+                           fd: &DexFileData, e: nom::Endianness) -> nom::IResult<&'a[u8], Code> {
 
     let debug_info = if raw.debug_info_off == 0 {
         None
@@ -374,7 +370,7 @@ fn transform_code_item<'a>(data: &'a[u8], data_off: usize, handler_off: usize, r
 
             let handler = {
                 let rh = peek!(&data[handler_off + raw_try.handler_off as usize ..], parse_encoded_catch_handler)?.1;
-                transform_encoded_catch_handler(rh, &ti)
+                transform_encoded_catch_handler(rh, &fd)
             };
 
             tries.push(TryItem {
@@ -391,7 +387,7 @@ fn transform_code_item<'a>(data: &'a[u8], data_off: usize, handler_off: usize, r
         Some(peek!(&data[handler_off as usize ..], parse_encoded_catch_handler_list)?.1
             .list
             .into_iter()
-            .map(|raw| transform_encoded_catch_handler(raw, &ti))
+            .map(|raw| transform_encoded_catch_handler(raw, &fd))
             .collect())
     } else {
         None
@@ -409,8 +405,7 @@ fn transform_code_item<'a>(data: &'a[u8], data_off: usize, handler_off: usize, r
 }
 
 fn transform_encoded_methods<'a>(data: &'a[u8], data_off: usize, raw: &[RawEncodedMethod],
-                                 mtd: &[Rc<Method>], ti: &[Rc<String>],
-                                 e: nom::Endianness) -> nom::IResult<&'a[u8], Vec<EncodedMethod>> {
+                                 fd: &DexFileData, e: nom::Endianness) -> nom::IResult<&'a[u8], Vec<EncodedMethod>> {
     let mut methods = vec!();
     let mut prev_offset = 0;
     for method in raw {
@@ -426,11 +421,11 @@ fn transform_encoded_methods<'a>(data: &'a[u8], data_off: usize, raw: &[RawEncod
                 0
             } as usize;
 
-            Some(transform_code_item(data, data_off, handler_off, rci, &ti, e)?.1)
+            Some(transform_code_item(data, data_off, handler_off, rci, &fd, e)?.1)
         };
 
         methods.push(EncodedMethod {
-            method: mtd[(prev_offset + method.method_idx_diff) as usize].clone(),
+            method: fd.methods[(prev_offset + method.method_idx_diff) as usize].clone(),
             access_flags: AccessFlag::parse(method.access_flags as u32, AnnotationType::Method),
             code
         });
@@ -441,12 +436,12 @@ fn transform_encoded_methods<'a>(data: &'a[u8], data_off: usize, raw: &[RawEncod
     Ok((data, methods))
 }
 
-fn transform_encoded_catch_handler(raw: RawEncodedCatchHandler, ti: &[Rc<String>]) -> EncodedCatchHandler{
+fn transform_encoded_catch_handler(raw: RawEncodedCatchHandler, fd: &DexFileData) -> EncodedCatchHandler {
     EncodedCatchHandler {
         handlers: raw.handlers.into_iter()
             .map(|raw| {
                 EncodedTypeAddrPair {
-                    type_: ti[raw.type_idx as usize].clone(),
+                    type_: fd.type_identifiers[raw.type_idx as usize].clone(),
                     addr: raw.addr
                 }
             }).collect(),
@@ -912,18 +907,16 @@ mod tests {
         let mut data = vec!();
         append_annotation_set_item_data(&mut data);
 
-        let sd = vec!(Rc::new("Something".to_string()),
-                      Rc::new("SomethingElse".to_string()));
-        let ti = generate_type_identifiers(2);
+        let fd = generate_file_data();
 
-        let res = parse_annotations(&data, &sd, &ti, 0, DATA_OFFSET, e).unwrap();
+        let res = parse_annotations(&data, &fd, 0, DATA_OFFSET, e).unwrap();
 
         let expect_annotation = AnnotationItem {
             visibility: Visibility::BUILD,
-            type_: ti[1].clone(),
+            type_: fd.type_identifiers[1].clone(),
             annotations: vec!(
                 AnnotationElement {
-                    name: sd[1].clone(),
+                    name: fd.string_data[1].clone(),
                     value: encoded_value::EncodedValue::Byte(0x05)
                 }
             )
@@ -951,12 +944,10 @@ mod tests {
                 annotations_offset: asi_2_offset
             }
         );
-        let fi = generate_field_identifiers(2);
-        let sd = vec!(Rc::new("Something".to_string()),
-                      Rc::new("SomethingElse".to_string()));
-        let ti = generate_type_identifiers(2);
 
-        let res = transform_field_annotations(&data, rfas, &sd, &ti, &fi, DATA_OFFSET, e).unwrap();
+        let fd = generate_file_data();
+
+        let res = transform_field_annotations(&data, rfas, &fd, DATA_OFFSET, e).unwrap();
 
         // ensure no data was consumed
         assert_eq!(res.0.len(), data.len());
@@ -964,10 +955,10 @@ mod tests {
         // expected annotation item
         let annotation_item = AnnotationItem {
             visibility: Visibility::BUILD,
-            type_: ti[1].clone(),
+            type_: fd.type_identifiers[1].clone(),
             annotations: vec!(
                 AnnotationElement {
-                    name: sd[1].clone(),
+                    name: fd.string_data[1].clone(),
                     value: encoded_value::EncodedValue::Byte(0x05)
                 }
             )
@@ -977,44 +968,55 @@ mod tests {
 
         assert_eq!(res.1, vec!(
             FieldAnnotation {
-                field_data: Rc::new(generate_field(0.to_string())),
+                field_data: fd.fields[0].clone(),
                 annotations: annotations.clone()
             },
             FieldAnnotation {
-                field_data: Rc::new(generate_field(1.to_string())),
+                field_data: fd.fields[1].clone(),
                 annotations: annotations.clone()
             }
         ))
     }
 
     // ==== helpers ====
+    fn generate_file_data() -> DexFileData {
+        let (mut string_data, mut type_identifiers, mut prototypes, mut fields, mut methods) =
+            (vec!(), vec!(), vec!(), vec!(), vec!());
 
-    // helper function to generate a field
-    fn generate_field(data: String) -> Field {
-        let data = Rc::new(data);
-        Field {
-            definer: data.clone(),
-            type_: data.clone(),
-            name: data.clone()
-        }
-    }
+        for i in 0..2 {
+            let data = Rc::new(i.to_string());
 
-    // helper function to generate a list of field identifiers
-    fn generate_field_identifiers(size: i32) -> Vec<Rc<Field>> {
-        let mut v = vec!();
-        for i in 0..size {
-            v.push(Rc::new(generate_field(i.to_string())))
-        }
-        v
-    }
+            string_data.push(data.clone());
 
-    // helper function to generate a list of type identifiers
-    fn generate_type_identifiers(size: i32) -> Vec<Rc<String>> {
-        let mut v = vec!();
-        for _ in 0..size {
-            v.push(Rc::new("SomeType".to_string()))
+            type_identifiers.push(data.clone());
+
+            let prototype = Rc::new(Prototype {
+                shorty: data.clone(),
+                return_type: data.clone(),
+                parameters: Some(vec!(data.clone(), data.clone()))
+            });
+            prototypes.push(prototype.clone());
+
+            fields.push(Rc::new(Field {
+                definer: data.clone(),
+                type_: data.clone(),
+                name: data.clone()
+            }));
+
+            methods.push(Rc::new(Method {
+                definer: data.clone(),
+                prototype,
+                name: data.clone()
+            }))
         }
-        v
+
+        DexFileData {
+            string_data,
+            type_identifiers,
+            prototypes,
+            fields,
+            methods
+        }
     }
 
     // helper function to generate and append annotation_set_items
