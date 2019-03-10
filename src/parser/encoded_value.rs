@@ -326,10 +326,7 @@ mod tests {
         // value type (float, 2 byte)
         writer.write_u8(0b00110000).unwrap();
         // value
-        //110011 00110011
-        // write sign and exponent (2 decimal places)
         writer.write_u8(0b00110011).unwrap();
-        // then value (255)
         writer.write_u8(0b00110011).unwrap();
 
         let res = parse_encoded_value_item(&writer).unwrap();

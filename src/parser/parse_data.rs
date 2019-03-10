@@ -40,16 +40,16 @@ fn transform_prototype_id_items<'a>(data: &'a[u8], proto_ids: &[RawPrototype], s
         let return_type = ti[item.return_type_idx as usize].clone();
 
         let parameters = if item.parameters_off == 0 {
-            None
+            vec!()
         } else {
-            Some(parse_type_list(&data[item.parameters_off as usize - off..], e)?.1
+            parse_type_list(&data[item.parameters_off as usize - off..], e)?.1
                 .list
                 .into_iter()
                 .map(|idx| ti[idx as usize].clone())
-                .collect())
+                .collect()
         };
 
-        v.push(Rc::new(Prototype {shorty, return_type, parameters} ));
+        v.push(Rc::new(Prototype { shorty, return_type, parameters }));
     }
 
     Ok((data, v))
@@ -135,9 +135,9 @@ fn parse_call_site_items(data: &[u8], data_off: usize, csi: &[u32], fd: &DexFile
         };
 
         let constant_values = if array.values.len() > 3 {
-            Some(array.values[3 ..].to_vec())
+            array.values[3 ..].to_vec()
         } else {
-            None
+            vec!()
         };
 
         v.push(CallSiteItem { method_handle, method_name, method_type, constant_values })
@@ -150,12 +150,9 @@ fn transform_annotations<'a>(data: &'a[u8], off: usize, data_off: usize, fd: &De
 
     let adi = parse_annotations_directory_item(&data[off - data_off..], e)?.1;
 
-    let class_annotations = if adi.class_annotations_off == 0 {
-        None
-    } else {
+    let mut class_annotations = vec!();
+    if adi.class_annotations_off != 0 {
         let set_item = parse_annotation_set_item(&data[adi.class_annotations_off as usize - data_off..], e)?.1;
-
-        let mut class_annotations = vec!();
         // Each entry here is an offset to an annotation_item in the data pool
         for annotation_offset in set_item.entries {
             // Every annotation item contains a visibility, a type and an annotation
@@ -168,26 +165,24 @@ fn transform_annotations<'a>(data: &'a[u8], off: usize, data_off: usize, fd: &De
                 elements: annotation_item.annotations
             });
         }
-
-        Some(class_annotations)
     };
 
     let field_annotations = if let Some(rfas) = adi.fld_annot {
-        Some(transform_field_annotations(data, rfas, &fd, data_off, e)?.1)
+        transform_field_annotations(data, rfas, &fd, data_off, e)?.1
     } else {
-        None
+        vec!()
     };
 
     let method_annotations = if let Some(rmas) = adi.mtd_annot {
-        Some(transform_method_annotations(data, rmas, &fd, data_off, e)?.1)
+        transform_method_annotations(data, rmas, &fd, data_off, e)?.1
     } else {
-        None
+        vec!()
     };
 
     let parameter_annotations = if let Some(rpas) = adi.prm_annot {
-        Some(transform_parameter_annotations(data, rpas, &fd, data_off, e)?.1)
+        transform_parameter_annotations(data, rpas, &fd, data_off, e)?.1
     } else {
-        None
+        vec!()
     };
 
     Ok((data, Annotations {
@@ -282,13 +277,13 @@ fn transform_class_defs<'a>(data: &'a[u8], data_off: usize, cdis: &[RawClassDefi
         };
 
         let interfaces = if cdi.interfaces_off == 0 {
-            None
+            vec!()
         } else {
-            Some(parse_type_list(&data[cdi.interfaces_off as usize - data_off..], e)?.1
+            parse_type_list(&data[cdi.interfaces_off as usize - data_off..], e)?.1
                 .list
                 .into_iter()
                 .map(|idx| fd.type_identifiers[idx as usize].clone())
-                .collect())
+                .collect()
         };
 
         let annotations = if cdi.annotations_off == 0 {
@@ -362,8 +357,8 @@ fn transform_code_item<'a>(data: &'a[u8], data_off: usize, handler_off: usize, r
         })
     };
 
-    let tries = if let Some(raw_tries) = raw.tries {
-        let mut tries = Vec::with_capacity(raw_tries.len());
+    let mut tries = vec!();
+    if let Some(raw_tries) = raw.tries {
         for raw_try in raw_tries {
 
             let code_units = parse_code_units(&data[raw_try.start_addr as usize ..],
@@ -379,19 +374,16 @@ fn transform_code_item<'a>(data: &'a[u8], data_off: usize, handler_off: usize, r
                 handler
             });
         }
-        Some(tries)
-    } else {
-        None
-    };
+    }
 
     let handlers = if handler_off != 0 {
-        Some(peek!(&data[handler_off as usize ..], parse_encoded_catch_handler_list)?.1
+        peek!(&data[handler_off as usize ..], parse_encoded_catch_handler_list)?.1
             .list
             .into_iter()
             .map(|raw| transform_encoded_catch_handler(raw, &fd))
-            .collect())
+            .collect()
     } else {
-        None
+        vec!()
     };
 
     Ok((data, Code {
@@ -994,7 +986,7 @@ mod tests {
             let prototype = Rc::new(Prototype {
                 shorty: data.clone(),
                 return_type: data.clone(),
-                parameters: Some(vec!(data.clone(), data.clone()))
+                parameters: vec!(data.clone(), data.clone())
             });
             prototypes.push(prototype.clone());
 

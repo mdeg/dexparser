@@ -24,7 +24,7 @@ pub struct CallSiteItem {
     pub method_handle: Rc<Method>,
     pub method_name: Rc<String>,
     pub method_type: Rc<Prototype>,
-    pub constant_values: Option<Vec<encoded_value::EncodedValue>>
+    pub constant_values: Vec<encoded_value::EncodedValue>
 }
 
 #[derive(Debug, PartialEq)]
@@ -40,7 +40,7 @@ pub struct Header {
 pub struct Prototype {
     pub shorty: Rc<String>,
     pub return_type: Rc<String>,
-    pub parameters: Option<Vec<Rc<String>>>
+    pub parameters: Vec<Rc<String>>
 }
 
 #[derive(Debug, PartialEq)]
@@ -75,7 +75,7 @@ pub struct ClassDefinition {
     pub class_type: Rc<String>,
     pub access_flags: Vec<AccessFlag>,
     pub superclass: Option<Rc<String>>,
-    pub interfaces: Option<Vec<Rc<String>>>,
+    pub interfaces: Vec<Rc<String>>,
     pub source_file_name: Option<Rc<String>>,
     pub annotations: Option<Annotations>,
     pub class_data: Option<ClassData>,
@@ -84,10 +84,10 @@ pub struct ClassDefinition {
 
 #[derive(Debug, PartialEq)]
 pub struct Annotations {
-    pub class_annotations: Option<Vec<ClassAnnotation>>,
-    pub field_annotations: Option<Vec<FieldAnnotation>>,
-    pub method_annotations: Option<Vec<MethodAnnotation>>,
-    pub parameter_annotations: Option<Vec<ParameterAnnotation>>
+    pub class_annotations: Vec<ClassAnnotation>,
+    pub field_annotations: Vec<FieldAnnotation>,
+    pub method_annotations: Vec<MethodAnnotation>,
+    pub parameter_annotations: Vec<ParameterAnnotation>
 }
 
 #[derive(Debug, PartialEq)]
@@ -154,8 +154,8 @@ pub struct Code {
     pub outs_size: u16,
     pub debug_info: Option<DebugInfo>,
     pub insns: Vec<u16>,
-    pub tries: Option<Vec<TryItem>>,
-    pub handlers: Option<Vec<EncodedCatchHandler>>
+    pub tries: Vec<TryItem>,
+    pub handlers: Vec<EncodedCatchHandler>
 }
 
 // Docs: try_item
