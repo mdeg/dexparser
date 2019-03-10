@@ -10,10 +10,11 @@ fn transform_string_id_items<'a>(data: &'a[u8], sdi: &[u32], off: usize) -> nom:
     for offset in sdi {
         let raw = parse_string_data_item(&data[*offset as usize - off..])?.1;
 
-        // TODO (release): theres a bug with decoding large regex strings here
+        // TODO (release): theres a bug with decoding regex strings here
         // possibly not handling escape characters well?
         if raw.data.len() as u32 != raw.utf16_size {
-            // TODO (release): return an error
+            // TODO (release): remove this comment when the bug is fixed
+//            return DexParserError::from("string is malformed")
         }
 
         v.push(Rc::new(raw.data));

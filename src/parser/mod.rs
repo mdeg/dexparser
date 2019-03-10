@@ -29,7 +29,6 @@ pub fn parse(buffer: &[u8]) -> Result<DexFile, DexParserError> {
         return Err(DexParserError::from(format!("buffer length {} is too short", buffer.len())));
     }
 
-    // TODO (release): work out this endian business - the constants here are swapped
     // Peek ahead to determine endianness
     let endianness = {
         if buffer[40 .. 44] == ENDIAN_CONSTANT {
@@ -69,7 +68,6 @@ fn parse_dex_file(input: &[u8], e: nom::Endianness) -> nom::IResult<&[u8], RawDe
 
     // Version 038 adds some new index pools with sizes not indicated in the header
     // For this version and higher, we'll need to peek at the map list to know their size for parsing
-    // TODO (release): verify this! Maybe it should just output the map list in a traversable format?
     let (mut call_site_idxs, mut method_handle_idxs) = (None, None);
     if header.version >= 38 {
         let map_list = call!(&input[header.map_off as usize ..], parse_map_list, e)?.1.list;
@@ -103,7 +101,6 @@ fn parse_dex_file(input: &[u8], e: nom::Endianness) -> nom::IResult<&[u8], RawDe
 // simple wrapper around the take!() macro so it returns a u8 instead of &[u8]
 named!(take_one<&[u8], u8>, map!(take!(1), |x| { x[0] }));
 
-// TODO (release): test if this works in byteswapped files
 pub fn determine_leb128_length(input: &[u8]) -> usize {
     input.iter()
         .take_while(|byte| (*byte & 0x80) != 0)
@@ -230,7 +227,7 @@ named_args!(parse_header(e: nom::Endianness)<&[u8], RawHeader>,
         // little bit of magic at the start
         tag!(DEX_FILE_MAGIC)                >>
         // followed by the version (0380 for example)
-        version: map!(take!(4), parse_version) >>
+        version: map_res!(take!(4), parse_version) >>
         // adler32 checksum of the rest of this DEX file
         checksum: u32!(e)                   >>
         // SHA1 signature of the rest of the file
@@ -276,9 +273,12 @@ named_args!(parse_header(e: nom::Endianness)<&[u8], RawHeader>,
     )
 );
 
-fn parse_version(value: &[u8]) -> i32 {
-    // TODO (release): remove this unwrap when error management is worked out
-    value[0..3].iter().map(|x| *x as char).collect::<String>().parse::<i32>().unwrap()
+fn parse_version(value: &[u8]) -> Result<i32, DexParserError> {
+    value[0..3].iter()
+        .map(|x| *x as char)
+        .collect::<String>()
+        .parse::<i32>()
+        .map_err(|_| DexParserError::ParsingFailed::from("could not parse version".to_string()))
 }
 
 // Docs: method_handle_item
@@ -388,7 +388,6 @@ mod tests {
     const e: nom::Endianness = nom::Endianness::Little;
 
     #[test]
-    // TODO (release): test endianness
     fn test_access_flag_bitmasking() {
         // all flags
         assert_eq!(AccessFlag::parse(std::u32::MAX, AnnotationType::Method).len(), 18);
@@ -650,9 +649,87 @@ mod tests {
         assert_eq!(res.1, -1);
     }
 
-    // TODO (release): test parse_header
+    #[test]
+    fn test_parse_header() {
+        use std::io::Write;
+
+        let signature = [0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x10, 0x11,
+            0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19];
+
+        let mut writer = vec!();
+        // magic!
+        writer.write_all(&DEX_FILE_MAGIC).unwrap();
+        // version
+        writer.write_u8(0x30).unwrap();
+        writer.write_u8(0x33).unwrap();
+        writer.write_u8(0x38).unwrap();
+        writer.write_u8(0x00).unwrap();
+        // checksum
+        writer.write_u32::<LittleEndian>(123).unwrap();
+        // signature
+        writer.write_all(&signature).unwrap();
+        // file and header size
+        writer.write_u32::<LittleEndian>(12345).unwrap();
+        writer.write_u32::<LittleEndian>(HEADER_SIZE as u32).unwrap();
+        // endian constant
+        writer.write_all(&ENDIAN_CONSTANT).unwrap();
+        // link size and offset
+        writer.write_u32::<LittleEndian>(1).unwrap();
+        writer.write_u32::<LittleEndian>(1).unwrap();
+        // map offset
+        writer.write_u32::<LittleEndian>(2).unwrap();
+        // string size/offset
+        writer.write_u32::<LittleEndian>(3).unwrap();
+        writer.write_u32::<LittleEndian>(3).unwrap();
+        // type size/offset
+        writer.write_u32::<LittleEndian>(4).unwrap();
+        writer.write_u32::<LittleEndian>(4).unwrap();
+        // proto size/offset
+        writer.write_u32::<LittleEndian>(5).unwrap();
+        writer.write_u32::<LittleEndian>(5).unwrap();
+        // field size/offset
+        writer.write_u32::<LittleEndian>(6).unwrap();
+        writer.write_u32::<LittleEndian>(6).unwrap();
+        // method size/offset
+        writer.write_u32::<LittleEndian>(7).unwrap();
+        writer.write_u32::<LittleEndian>(7).unwrap();
+        // class def size/offset
+        writer.write_u32::<LittleEndian>(8).unwrap();
+        writer.write_u32::<LittleEndian>(8).unwrap();
+        // data size/offset
+        writer.write_u32::<LittleEndian>(9).unwrap();
+        writer.write_u32::<LittleEndian>(9).unwrap();
+
+        let res = parse_header(&writer, nom::Endianness::Little).unwrap();
+
+        assert_eq!(res.1, RawHeader {
+            version: 38,
+            checksum: 123,
+            signature,
+            file_size: 12345,
+            header_size: HEADER_SIZE as u32,
+            endian_tag: 0x78563412 as u32,
+            link_size: 1,
+            link_off: 1,
+            map_off: 2,
+            string_ids_size: 3,
+            string_ids_off: 3,
+            type_ids_size: 4,
+            type_ids_off: 4,
+            proto_ids_size: 5,
+            proto_ids_off: 5,
+            field_ids_size: 6,
+            field_ids_off: 6,
+            method_ids_size: 7,
+            method_ids_off: 7,
+            class_defs_size: 8,
+            class_defs_off: 8,
+            data_size: 9,
+            data_off: 9
+        })
+    }
 
     // TODO (release): test parse_dex_file
 
-    // TODO: test NO_INDEX
+    // TODO (release): test NO_INDEX
 }
