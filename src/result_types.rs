@@ -7,7 +7,7 @@ pub struct DexFile {
     pub header: super::Header,
     pub file_data: DexFileData,
     pub classes: Vec<ClassDefinition>,
-    pub call_site_items: Option<Vec<CallSiteItem>>
+    pub call_site_items: Vec<CallSiteItem>
 }
 
 #[derive(Debug, PartialEq)]

@@ -93,9 +93,9 @@ pub fn transform_dex_file(raw: RawDexFile, e: nom::Endianness) -> Result<DexFile
     let classes = transform_class_defs(&raw.data, off, &raw.class_def_items, &file_data, header.endianness)?.1;
 
     let call_site_items = if let Some(csi) = raw.call_site_idxs {
-        Some(parse_call_site_items(&raw.data, off, &csi, &file_data)?)
+        parse_call_site_items(&raw.data, off, &csi, &file_data)?
     } else {
-        None
+        vec!()
     };
 
     Ok(DexFile {
