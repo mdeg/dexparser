@@ -278,7 +278,7 @@ fn parse_version(value: &[u8]) -> Result<i32, DexParserError> {
         .map(|x| *x as char)
         .collect::<String>()
         .parse::<i32>()
-        .map_err(|_| DexParserError::ParsingFailed::from("could not parse version".to_string()))
+        .map_err(|_| DexParserError::from("could not parse version".to_string()))
 }
 
 // Docs: method_handle_item
