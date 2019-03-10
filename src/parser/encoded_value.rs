@@ -303,7 +303,6 @@ mod tests {
     #[test]
     fn test_parse_float_value_single_byte() {
         // spec says a float may be encoded as a single byte
-        // TODO (release): is 0 the only IEEE754 float value that can be encoded with a single byte?
         let mut writer = vec!();
         // value type (float, 1 byte)
         writer.write_u8(0b00010000).unwrap();
@@ -318,28 +317,30 @@ mod tests {
         }
     }
 
-    // TODO (release): work out how exactly the spec encodes floats
-//    #[test]
-//    fn test_parse_float_value_two_bytes() {
-//        // a two byte value
-//        // tests that we are sign extending correctly
-//
-//        let mut writer = vec!();
-//        // value type (float, 2 byte)
-//        writer.write_u8(0b00110000).unwrap();
-//        // value
-//        // write sign and exponent (2 decimal places)
-//        writer.write_u8(0b00000010).unwrap();
-//        // then value (255)
-//        writer.write_u8(0b11111111).unwrap();
-//
-//        let res = parse_encoded_value_item(&writer).unwrap();
-//
-//        match res.1 {
-//            EncodedValue::Float(x) => assert_eq!(x, 2.55_f32),
-//            _ => panic!()
-//        }
-//    }
+    #[test]
+    fn test_parse_float_value_two_bytes() {
+        // a two byte value (which will be tiny, as it has no exponent)
+        // tests that we are sign extending correctly
+
+        let mut writer = vec!();
+        // value type (float, 2 byte)
+        writer.write_u8(0b00110000).unwrap();
+        // value
+        //110011 00110011
+        // write sign and exponent (2 decimal places)
+        writer.write_u8(0b00110011).unwrap();
+        // then value (255)
+        writer.write_u8(0b00110011).unwrap();
+
+        let res = parse_encoded_value_item(&writer).unwrap();
+
+        match res.1 {
+            EncodedValue::Float(x) => {
+                assert_eq!(x, 0.000000000000000000000000000000000000000018367_f32)
+            },
+            _ => panic!()
+        }
+    }
 
     #[test]
     fn test_parse_float_value_multiple_byte() {
