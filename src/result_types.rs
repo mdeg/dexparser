@@ -1,6 +1,4 @@
 use std::rc::Rc;
-// TODO (improvement): encoded_value shouldn't need to be pub
-use crate::parser::encoded_value;
 
 #[derive(Debug, PartialEq)]
 pub struct DexFile {
@@ -16,7 +14,7 @@ pub struct DexFileData {
     pub type_identifiers: Vec<Rc<String>>,
     pub prototypes: Vec<Rc<Prototype>>,
     pub fields: Vec<Rc<Field>>,
-    pub methods: Vec<Rc<Method>>,
+    pub methods: Vec<Rc<Method>>
 }
 
 #[derive(Debug, PartialEq)]
@@ -24,7 +22,7 @@ pub struct CallSiteItem {
     pub method_handle: Rc<Method>,
     pub method_name: Rc<String>,
     pub method_type: Rc<Prototype>,
-    pub constant_values: Vec<encoded_value::EncodedValue>
+    pub constant_values: Vec<EncodedValue>
 }
 
 #[derive(Debug, PartialEq)]
@@ -67,7 +65,7 @@ pub struct ClassAnnotation {
 #[derive(Debug, PartialEq, Clone)]
 pub struct AnnotationElement {
     pub name: Rc<String>,
-    pub value: encoded_value::EncodedValue
+    pub value: EncodedValue
 }
 
 #[derive(Debug, PartialEq)]
@@ -79,7 +77,7 @@ pub struct ClassDefinition {
     pub source_file_name: Option<Rc<String>>,
     pub annotations: Option<Annotations>,
     pub class_data: Option<ClassData>,
-    pub static_values: Option<encoded_value::EncodedArrayItem>
+    pub static_values: Vec<EncodedValue>
 }
 
 #[derive(Debug, PartialEq)]
@@ -189,6 +187,34 @@ pub struct DebugInfo {
     pub line_start: u32,
     pub parameter_names: Vec<i32>,
     pub bytecode: Vec<DebugItemBytecodes>
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum EncodedValue {
+    Byte(u8),
+    Short(i16),
+    Char(u16),
+    Int(i32),
+    Long(i64),
+    Float(f32),
+    Double(f64),
+    MethodType(Rc<Prototype>),
+    MethodHandle(Rc<Method>),
+    String(Rc<String>),
+    Type(Rc<String>),
+    Field(Rc<Field>),
+    Method(Rc<Method>),
+    Enum(Rc<Field>),
+    Array(Vec<EncodedValue>),
+    Annotation(EncodedAnnotationItem),
+    Null,
+    Boolean(bool)
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct EncodedAnnotationItem {
+    pub type_: Rc<String>,
+    pub values: Vec<AnnotationElement>
 }
 
 //noinspection RsEnumVariantNaming

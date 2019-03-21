@@ -129,12 +129,6 @@ pub struct RawParameterAnnotation {
     pub annotations_offset: u32
 }
 
-#[derive(Debug, PartialEq)]
-pub struct RawAnnotationItem {
-    pub visibility: u8,
-    pub annotation: RawEncodedAnnotationItem
-}
-
 // Docs: type_list
 #[derive(Debug, PartialEq)]
 pub struct RawTypeList {
@@ -163,20 +157,6 @@ pub struct RawAnnotationSetRefList {
     // List of offsets to annotation items
     // Docs: annotation_set_ref_item
     pub entries: Vec<u32>
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub struct RawEncodedAnnotationItem {
-    pub type_idx: Uleb128,
-    pub size: Uleb128,
-    pub elements: Vec<RawAnnotationElementItem>
-}
-
-// Docs: annotation_element_item
-#[derive(Debug, PartialEq, Clone)]
-pub struct RawAnnotationElementItem {
-    pub name_idx: Uleb128,
-    pub value: super::encoded_value::EncodedValue
 }
 
 // Docs: method_id_item

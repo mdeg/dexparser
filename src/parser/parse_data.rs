@@ -1,6 +1,6 @@
 // TODO (improvement): review peeks, not necessary if we don't use the return
 
-use ::std::rc::Rc;
+use std::rc::Rc;
 use super::raw_types::*;
 use crate::result_types::*;
 use super::*;
@@ -106,7 +106,7 @@ pub fn transform_dex_file(raw: RawDexFile, e: nom::Endianness) -> Result<DexFile
     })
 }
 
-// TODO: is this raw call site item?
+// TODO (release): is this raw call site item?
 fn parse_call_site_items(data: &[u8], data_off: usize, csi: &[u32], fd: &DexFileData) -> Result<Vec<CallSiteItem>, DexParserError> {
     // TODO (release): test parsing call_site_items
     unimplemented!();
@@ -114,28 +114,29 @@ fn parse_call_site_items(data: &[u8], data_off: usize, csi: &[u32], fd: &DexFile
     let mut v = Vec::new();
     for idx in csi {
 
-        let array = encoded_value::parse_encoded_array_item(&data[*idx as usize - data_off ..])?.1;
+        let array = encoded_value::parse_encoded_array_item(&data[*idx as usize - data_off ..], fd)?.1;
 
-        let method_handle = if encoded_value::EncodedValue::MethodHandle(*idx) == array.values[0] {
-            fd.methods[*idx as usize].clone()
+        let method_handle = if let EncodedValue::MethodHandle(mtd) = array[0] {
+            mtd.clone()
         } else {
             return Err(DexParserError::from("call site item could not be parsed: bootstrap linker method handle malformed"));
         };
 
-        let method_name = if encoded_value::EncodedValue::String(*idx) == array.values[1] {
-            fd.string_data[*idx as usize].clone()
+        let method_name = if let EncodedValue::String(mtd_name) = array[1] {
+            mtd_name.clone()
         } else {
             return Err(DexParserError::from("call site item could not be parsed: bootstrap linker method name malformed"));
         };
 
-        let method_type = if encoded_value::EncodedValue::MethodType(*idx) == array.values[2] {
-            fd.prototypes[*idx as usize].clone()
+        let method_type = if let EncodedValue::MethodType(mtd_type) = array[2] {
+            mtd_type.clone()
         } else {
             return Err(DexParserError::from("call site item could not be parsed: bootstrap linker method type malformed"));
         };
 
-        let constant_values = if array.values.len() > 3 {
-            array.values[3 ..].to_vec()
+        // TODO: check indexing
+        let constant_values = if array.len() > 3 {
+            array[3 ..].to_vec()
         } else {
             vec!()
         };
@@ -156,8 +157,7 @@ fn transform_annotations<'a>(data: &'a[u8], off: usize, data_off: usize, fd: &De
         // Each entry here is an offset to an annotation_item in the data pool
         for annotation_offset in set_item.entries {
             // Every annotation item contains a visibility, a type and an annotation
-            let rai = parse_annotation_item(&data[annotation_offset as usize - data_off..])?.1;
-            let annotation_item = transform_annotation_item(rai, &fd)?;
+            let annotation_item = parse_annotation_item(&data[annotation_offset as usize - data_off..], fd)?.1;
 
             class_annotations.push(ClassAnnotation {
                 visibility: annotation_item.visibility,
@@ -191,19 +191,6 @@ fn transform_annotations<'a>(data: &'a[u8], off: usize, data_off: usize, fd: &De
         method_annotations,
         parameter_annotations
     }))
-}
-
-fn transform_annotation_item(item: RawAnnotationItem, fd: &DexFileData) -> Result<AnnotationItem, DexParserError> {
-    Ok(AnnotationItem {
-        visibility: Visibility::parse(item.visibility)?,
-        type_: fd.type_identifiers[item.annotation.type_idx as usize].clone(),
-        annotations: item.annotation.elements.into_iter().map(|raw| {
-            AnnotationElement {
-                name: fd.string_data[raw.name_idx as usize].clone(),
-                value: raw.value
-            }
-        }).collect()
-    })
 }
 
 fn transform_field_annotations<'a>(data: &'a[u8], rfas: Vec<RawFieldAnnotation>, fd: &DexFileData,
@@ -253,8 +240,7 @@ fn parse_annotations<'a>(data: &'a[u8], fd: &DexFileData, off: usize, data_off: 
     let mut annotations = vec!();
     let asi = parse_annotation_set_item(&data[off - data_off..], e)?.1;
     for annot_offset in asi.entries {
-        let rai = parse_annotation_item(&data[annot_offset as usize - data_off..])?.1;
-        annotations.push(transform_annotation_item(rai, &fd)?);
+        annotations.push(parse_annotation_item(&data[annot_offset as usize - data_off..], fd)?.1);
     }
 
     Ok((data, annotations))
@@ -312,10 +298,9 @@ fn transform_class_defs<'a>(data: &'a[u8], data_off: usize, cdis: &[RawClassDefi
         };
 
         let static_values = if cdi.static_values_off == 0 {
-            None
+            vec!()
         } else {
-            Some(peek!(&data[cdi.static_values_off as usize - data_off..],
-                encoded_value::parse_encoded_array_item)?.1)
+            peek!(&data[cdi.static_values_off as usize - data_off..], call!(encoded_value::parse_encoded_array_item, fd))?.1
         };
 
         v.push(ClassDefinition { class_type, access_flags, superclass, interfaces,
@@ -524,15 +509,15 @@ named!(parse_string_data_item<&[u8], RawStringData>,
 );
 
 // Docs: annotation_item
-named!(parse_annotation_item<&[u8], RawAnnotationItem>,
-    peek!(
+fn parse_annotation_item<'a>(data: &'a[u8], fd: &DexFileData) -> nom::IResult<&'a[u8], AnnotationItem> {
+    peek!(data,
         do_parse!(
-            visibility: call!(take_one)    >>
-            annotation: call!(encoded_value::parse_encoded_annotation_item)    >>
-            (RawAnnotationItem { visibility, annotation })
+            visibility: map_res!(call!(take_one), Visibility::parse)    >>
+            encoded: call!(encoded_value::parse_encoded_annotation_item, fd)    >>
+            (AnnotationItem { visibility, type_: encoded.type_, annotations: encoded.values })
         )
     )
-);
+}
 
 // Docs: annotation_directory_item
 named_args!(parse_annotations_directory_item(e:nom::Endianness)<&[u8], RawAnnotations>,
@@ -572,16 +557,6 @@ named_args!(parse_parameter_annotation_item(e: nom::Endianness)<&[u8], RawParame
         method_idx: u32!(e) >>
         annotations_offset: u32!(e) >>
         (RawParameterAnnotation { method_idx, annotations_offset })
-    )
-);
-
-
-// Docs: annotation_element_item
-named!(pub parse_annotation_element_item<&[u8], RawAnnotationElementItem>,
-    do_parse!(
-        name_idx: call!(parse_uleb128)   >>
-        value: call!(encoded_value::parse_encoded_value_item)   >>
-        (RawAnnotationElementItem { name_idx, value })
     )
 );
 
@@ -784,25 +759,6 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_annotation_element_item() {
-        let mut writer = vec!();
-
-        // name_idx
-        leb128::write::unsigned(&mut writer, 1).unwrap();
-
-        // insert an encoded_value_item (byte)
-        writer.write_u8(0x00).unwrap();
-        writer.write_u8(0x01).unwrap();
-
-        let res = parse_annotation_element_item(&writer).unwrap();
-
-        assert_eq!(res.1, RawAnnotationElementItem {
-            name_idx: 1,
-            value: encoded_value::EncodedValue::Byte(0x01)
-        })
-    }
-
-    #[test]
     fn test_parse_annotation_set_ref_list() {
         let mut writer = vec!();
 
@@ -910,7 +866,7 @@ mod tests {
             annotations: vec!(
                 AnnotationElement {
                     name: fd.string_data[1].clone(),
-                    value: encoded_value::EncodedValue::Byte(0x05)
+                    value: EncodedValue::Byte(0x05)
                 }
             )
         };
@@ -952,7 +908,7 @@ mod tests {
             annotations: vec!(
                 AnnotationElement {
                     name: fd.string_data[1].clone(),
-                    value: encoded_value::EncodedValue::Byte(0x05)
+                    value: EncodedValue::Byte(0x05)
                 }
             )
         };

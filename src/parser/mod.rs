@@ -88,7 +88,7 @@ fn parse_dex_file(input: &[u8], e: nom::Endianness) -> nom::IResult<&[u8], RawDe
     // anything left after data is just link data
     let (ld, data) = map!(&input[header.data_off as usize ..], take!(header.data_size), |d| { d.to_vec() })?;
 
-    let link_data = if ld.len() > 0 {
+    let link_data = if ld.is_empty() {
         Some(ld.to_vec())
     } else {
         None
@@ -101,7 +101,7 @@ fn parse_dex_file(input: &[u8], e: nom::Endianness) -> nom::IResult<&[u8], RawDe
 // simple wrapper around the take!() macro so it returns a u8 instead of &[u8]
 named!(take_one<&[u8], u8>, map!(take!(1), |x| { x[0] }));
 
-pub fn determine_leb128_length(input: &[u8]) -> usize {
+fn determine_leb128_length(input: &[u8]) -> usize {
     input.iter()
         .take_while(|byte| (*byte & 0x80) != 0)
         .count()
