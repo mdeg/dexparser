@@ -1,4 +1,4 @@
-// TODO (improvement): review peeks, not necessary if we don't use the return
+// TODO: review peeks, not necessary if we don't use the return
 
 use std::rc::Rc;
 use super::raw_types::*;
@@ -9,13 +9,6 @@ fn transform_string_id_items<'a>(data: &'a[u8], sdi: &[u32], off: usize) -> nom:
     let mut v = vec!();
     for offset in sdi {
         let raw = parse_string_data_item(&data[*offset as usize - off..])?.1;
-
-        // TODO (release): theres a bug with decoding regex strings here
-        // possibly not handling escape characters well?
-        if raw.data.len() as u32 != raw.utf16_size {
-            // TODO (release): remove this comment when the bug is fixed
-//            return DexParserError::from("string is malformed")
-        }
 
         v.push(Rc::new(raw.data));
     }
@@ -92,58 +85,21 @@ pub fn transform_dex_file(raw: RawDexFile, e: nom::Endianness) -> Result<DexFile
 
     let classes = transform_class_defs(&raw.data, off, &raw.class_def_items, &file_data, header.endianness)?.1;
 
+    /**
+    TODO: find a DEX file with call site items and test parsing them
+
     let call_site_items = if let Some(csi) = raw.call_site_idxs {
         parse_call_site_items(&raw.data, off, &csi, &file_data)?
     } else {
         vec!()
     };
+    */
 
     Ok(DexFile {
         header,
         file_data,
-        classes,
-        call_site_items
+        classes
     })
-}
-
-// TODO (release): is this raw call site item?
-fn parse_call_site_items(data: &[u8], data_off: usize, csi: &[u32], fd: &DexFileData) -> Result<Vec<CallSiteItem>, DexParserError> {
-    // TODO (release): test parsing call_site_items
-    unimplemented!();
-
-    let mut v = Vec::new();
-    for idx in csi {
-
-        let array = encoded_value::parse_encoded_array_item(&data[*idx as usize - data_off ..], fd)?.1;
-
-        let method_handle = if let EncodedValue::MethodHandle(mtd) = array[0] {
-            mtd.clone()
-        } else {
-            return Err(DexParserError::from("call site item could not be parsed: bootstrap linker method handle malformed"));
-        };
-
-        let method_name = if let EncodedValue::String(mtd_name) = array[1] {
-            mtd_name.clone()
-        } else {
-            return Err(DexParserError::from("call site item could not be parsed: bootstrap linker method name malformed"));
-        };
-
-        let method_type = if let EncodedValue::MethodType(mtd_type) = array[2] {
-            mtd_type.clone()
-        } else {
-            return Err(DexParserError::from("call site item could not be parsed: bootstrap linker method type malformed"));
-        };
-
-        // TODO: check indexing
-        let constant_values = if array.len() > 3 {
-            array[3 ..].to_vec()
-        } else {
-            vec!()
-        };
-
-        v.push(CallSiteItem { method_handle, method_name, method_type, constant_values })
-    }
-    Ok(v)
 }
 
 fn transform_annotations<'a>(data: &'a[u8], off: usize, data_off: usize, fd: &DexFileData,
@@ -426,6 +382,47 @@ fn transform_encoded_catch_handler(raw: RawEncodedCatchHandler, fd: &DexFileData
         catch_all_addr: raw.catch_all_addr
     }
 }
+
+/**
+TODO: implement parsing call site items
+fn parse_call_site_items(data: &[u8], data_off: usize, csi: &[u32], fd: &DexFileData) -> Result<Vec<CallSiteItem>, DexParserError> {
+    unimplemented!();
+
+    let mut v = Vec::new();
+    for idx in csi {
+
+        let array = encoded_value::parse_encoded_array_item(&data[*idx as usize - data_off ..], fd)?.1;
+
+        let method_handle = if let EncodedValue::MethodHandle(mtd) = array[0] {
+            mtd.clone()
+        } else {
+            return Err(DexParserError::from("call site item could not be parsed: bootstrap linker method handle malformed"));
+        };
+
+        let method_name = if let EncodedValue::String(mtd_name) = array[1] {
+            mtd_name.clone()
+        } else {
+            return Err(DexParserError::from("call site item could not be parsed: bootstrap linker method name malformed"));
+        };
+
+        let method_type = if let EncodedValue::MethodType(mtd_type) = array[2] {
+            mtd_type.clone()
+        } else {
+            return Err(DexParserError::from("call site item could not be parsed: bootstrap linker method type malformed"));
+        };
+
+        // TODO: check indexing
+        let constant_values = if array.len() > 3 {
+            array[3 ..].to_vec()
+        } else {
+            vec!()
+        };
+
+        v.push(CallSiteItem { method_handle, method_name, method_type, constant_values })
+    }
+    Ok(v)
+}
+*/
 
 // Docs: debug_info_item
 named!(parse_debug_info_item<&[u8], RawDebugInfoItem>,

@@ -1,15 +1,18 @@
 [package]
 name = "dexparser"
-version = "0.1.0"
+version = "0.6.0"
 authors = ["Michael Degano <michael@dega.no>"]
+license = "MIT"
+description = "Parser for Android's DEX file format"
+homepage = "https://github.com/mdeg/dexparser"
 edition = "2018"
 
 [dependencies]
-leb128 = "*"
-byteorder = "*"
-mutf8 = "*"
-failure = "*"
+leb128 = "0.2.4"
+byteorder = "1.3.2"
+mutf8 = "0.2.0"
+failure = "0.1.6"
 
 [dependencies.nom]
-version = "*"
+version = "4.2.3"
 features = ["verbose-errors"]

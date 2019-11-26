@@ -729,7 +729,7 @@ mod tests {
         })
     }
 
-    // TODO (release): test parse_dex_file
+    // TODO: test parse_dex_file
 
-    // TODO (release): test NO_INDEX
+    // TODO: test NO_INDEX
 }

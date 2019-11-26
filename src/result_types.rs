@@ -4,8 +4,10 @@ use std::rc::Rc;
 pub struct DexFile {
     pub header: super::Header,
     pub file_data: DexFileData,
-    pub classes: Vec<ClassDefinition>,
-    pub call_site_items: Vec<CallSiteItem>
+    pub classes: Vec<ClassDefinition>
+    /* TODO: parse call site items
+        pub call_site_items: Vec<CallSiteItem>
+    */
 }
 
 #[derive(Debug, PartialEq)]

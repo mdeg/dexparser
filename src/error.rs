@@ -77,7 +77,7 @@ impl From<::std::string::FromUtf8Error> for DexParserError {
 
 impl From<DexParserError> for nom::Err<&[u8]> {
     fn from(e: DexParserError) -> Self {
-        // TODO (release) - work out how to build a proper error here, or avoid converting back and forth
-        nom::Err::Failure(nom::Context::Code(b"TODO", nom::ErrorKind::Custom(0)))
+        // TODO - work out how to build a proper error here, or avoid converting back and forth
+        nom::Err::Failure(nom::Context::Code(b"Failed to parse DEX file", nom::ErrorKind::Custom(0)))
     }
 }

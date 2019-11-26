@@ -1,7 +1,6 @@
 use super::{parse_uleb128, take_one, Uleb128};
 use crate::error::*;
 use crate::result_types::*;
-use std::rc::Rc;
 use byteorder::ByteOrder;
 
 // note that this does NOT peek! that's the responsibility of the calling parser
@@ -189,6 +188,7 @@ mod tests {
 
     use super::*;
     use byteorder::*;
+    use std::rc::Rc;
 
     #[test]
     fn test_empty_encoded_value_item() {
@@ -413,9 +413,9 @@ mod tests {
         assert_eq!(res.1, EncodedValue::Double(123_f64))
     }
 
-    // TODO (release): write more tests for double values
+    // TODO: write more tests for double values
 
-    // TODO (release): write multi/single byte tests for method types
+    // TODO: write multi/single byte tests for method types
 
     #[test]
     fn test_parse_method_type() {
