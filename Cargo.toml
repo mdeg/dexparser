@@ -4,6 +4,8 @@ version = "0.6.0"
 authors = ["Michael Degano <michael@dega.no>"]
 license = "MIT"
 description = "Parser for Android's DEX file format"
+keywords = ["android", "dex", "dalvik", "parser"]
+categories = ["filesystem", "encoding", "parsing", "os"]
 homepage = "https://github.com/mdeg/dexparser"
 edition = "2018"
 
