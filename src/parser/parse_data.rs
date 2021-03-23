@@ -364,7 +364,7 @@ fn transform_encoded_methods<'a>(data: &'a[u8], data_off: usize, raw: &[RawEncod
             code
         });
 
-        prev_offset = method.method_idx_diff;
+        prev_offset += method.method_idx_diff;
     }
 
     Ok((data, methods))
